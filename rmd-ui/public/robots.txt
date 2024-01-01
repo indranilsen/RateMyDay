@@ -1,0 +1,6 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Disallow: /day-rating
+Disallow: /month-view
+Disallow: /year-view
+Disallow: /settings
