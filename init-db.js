@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS ratings (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   rating_date DATE NOT NULL,
-  rating INT CHECK (rating BETWEEN 1 AND 5),
+  rating INT CHECK (rating BETWEEN 1 AND 10),
   note TEXT,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE (user_id, rating_date)

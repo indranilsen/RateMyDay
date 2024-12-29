@@ -21,7 +21,7 @@ router.post('/submit-rating', async (req, res) => {
     if (!userId) {
       return res.status(403).json({ message: 'Not logged in' });
     }
-    if (!ratingDate || rating === undefined || rating < 1 || rating > 5) {
+    if (!ratingDate || rating === undefined || rating < 1 || rating > 10) {
       return res.status(400).json({ message: 'Invalid rating data' });
     }
   
