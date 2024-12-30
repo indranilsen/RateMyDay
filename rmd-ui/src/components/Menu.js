@@ -51,11 +51,11 @@ const Menu = ({ isMobile }) => {
       padding: '10px',
       height: '64px' 
     }}>
+      <IconButton onClick={handleSettings} sx={{ ...iconButtonStyle }}>
+        <SettingsIcon sx={{ fontSize: '2.5rem' }} /> {/* Adjust icon size here */}
+      </IconButton>
       <IconButton onClick={handleLogout} sx={{ ...iconButtonStyle }}>
         <PowerSettingsNewIcon sx={{ fontSize: '2.5rem' }} /> {/* Adjust icon size here */}
-      </IconButton>
-      <IconButton onClick={handleSettings} sx={{ ...iconButtonStyle, display: 'none' }}>
-        <SettingsIcon sx={{ fontSize: '2.5rem' }} /> {/* Adjust icon size here */}
       </IconButton>
     </Box>
   );

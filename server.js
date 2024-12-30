@@ -70,3 +70,5 @@ app.use(endpointPrefix + 'api/settings', settingsRouter);
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+
+require('./reminder-task');

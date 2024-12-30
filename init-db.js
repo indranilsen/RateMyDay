@@ -25,14 +25,12 @@ CREATE TABLE IF NOT EXISTS ratings (
 `;
 
 const createSettingsTable = `
-CREATE TABLE IF NOT EXISTS settings (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
-  setting_name VARCHAR(255) NOT NULL,
-  setting_value VARCHAR(255) NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  UNIQUE (user_id, setting_name)
-);
+  CREATE TABLE IF NOT EXISTS settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    data JSON NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
 `;
 
 async function initializeDatabase() {
