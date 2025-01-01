@@ -135,7 +135,7 @@ router.post('/send-emails', async (req, res) => {
       await sendEmail({
         to: email,
         subject,
-        text: body
+        html: body
       });
     }
 

@@ -105,7 +105,14 @@ const DayRating = () => {
         }}>
         {format(date, 'MMM dd, yyyy')}
       </Typography>
-        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+        <Box sx={{
+          display: 'flex',
+          flexWrap: 'wrap', // Allow wrapping
+          justifyContent: 'center',
+          mb: 3,
+          gap: 1, // Add spacing between buttons
+          maxWidth: '100%', // Ensure it doesn't overflow
+        }}>
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
             <Button
               key={value}

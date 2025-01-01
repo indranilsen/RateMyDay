@@ -109,8 +109,14 @@ const YearView = () => {
               sx={{
                 width: '14px',
                 height: '14px',
-                backgroundColor: applyHoverEffect ? color + '55' : color,
-                border: '1px solid grey',
+                backgroundColor: hoveredMonth !== -1
+                  ? isSameMonth(cellDate, new Date(year, hoveredMonth))
+                    ? color // Full color for hovered month cells
+                    : `${color}55` // Lighter color for non-hovered months
+                  : color, // Default color when no month is hovered
+                border: hoveredMonth !== -1 && isSameMonth(cellDate, new Date(year, hoveredMonth))
+                  ? '1.5px solid grey' // Thicker border for hovered month cells
+                  : '1px solid grey', // Default border for non-hovered months
                 borderRadius: '2px',
                 cursor: isClickable ? 'pointer' : 'default',
                 opacity: isClickable ? 1 : 0.4,
@@ -119,6 +125,7 @@ const YearView = () => {
           </Tooltip>
         </Grid>
       );
+
     }
 
     return (

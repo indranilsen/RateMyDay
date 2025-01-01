@@ -9,9 +9,15 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material';
 import Fuse from 'fuse.js';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
+import { marked } from 'marked';
+
 import config from '../Config';
 
 const ENDPOINT_PREFIX = config.ENDPOINT_PREFIX;
@@ -20,6 +26,7 @@ const AdminPage = () => {
   const [stats, setStats] = useState({});
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
+  const [useMarkdown, setUseMarkdown] = useState(false);
   const [recipientType, setRecipientType] = useState('all');
 
   const [allUsers, setAllUsers] = useState([]);
@@ -72,18 +79,26 @@ const AdminPage = () => {
   }, [searchTerm, allUsers]);
 
   const handleSendEmail = async () => {
+    // If markdown mode is on, convert to HTML first
+    let finalBody = emailBody;
+    if (useMarkdown) {
+      finalBody = marked(emailBody); // convert MD -> HTML
+    }
+
+    const payload = {
+      subject: emailSubject,
+      body: finalBody,
+      recipientType,
+      emails: selectedEmails
+    };
+
     try {
-      const payload = {
-        subject: emailSubject,
-        body: emailBody,
-        recipientType,
-        emails: selectedEmails
-      };
       await axios.post(`${ENDPOINT_PREFIX}/api/admin/send-emails`, payload, { withCredentials: true });
       alert('Emails sent successfully!');
       // Reset fields
       setEmailSubject('');
       setEmailBody('');
+      setUseMarkdown(false);
       setSelectedEmails([]);
       setRecipientType('all');
       setSearchTerm('');
@@ -148,6 +163,32 @@ const AdminPage = () => {
           onChange={(e) => setEmailSubject(e.target.value)}
           sx={{ mt: 2 }}
         />
+
+        {/* Toggle for Markdown Mode */}
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={useMarkdown}
+              onChange={(e) => setUseMarkdown(e.target.checked)}
+            />
+          }
+          label="Markdown Mode"
+          sx={{ mt: 2 }}
+        />
+
+        {/* If NOT in markdown mode, show the ReactQuill WYSIWYG */}
+        {!useMarkdown && (
+          <Box sx={{ mt: 2 }}>
+            <ReactQuill
+              theme="snow"
+              value={emailBody}
+              onChange={setEmailBody}
+              placeholder="Type your rich text email here..."
+              style={{ minHeight: '200px' }}
+            />
+          </Box>
+        )}
+
         <TextField
           label="Body"
           fullWidth
