@@ -61,8 +61,9 @@ router.post('/login', async (req, res) => {
     }
 
     // Start a session
+    // Return user role so frontend can store it
     req.session.userId = user.id;
-    res.json({ message: 'Login successful' });
+    res.json({ message: 'Login successful', role: user.user_role });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error logging in user' });

@@ -13,6 +13,8 @@
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "date-fns": "^3.0.6",
+    "diskusage": "^1.2.0",
+    "diskusage-ng": "^1.0.4",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-mysql-session": "^3.0.0",

@@ -1,6 +1,7 @@
 import React from 'react';
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import SettingsIcon from '@mui/icons-material/Settings';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { IconButton, Box } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -25,6 +26,10 @@ const Menu = ({ isMobile }) => {
   const handleSettings = () => {
     navigate('/settings');
   };
+
+  // Check if user is admin
+  const userRole = localStorage.getItem('userRole');
+  const isAdmin = (userRole === 'admin');
 
   // Common style for IconButton
   const iconButtonStyle = {
@@ -51,6 +56,13 @@ const Menu = ({ isMobile }) => {
       padding: '10px',
       height: '64px' 
     }}>
+      {isAdmin &&
+        (
+          <IconButton onClick={() => navigate('/admin')} sx={{ ...iconButtonStyle }}>
+            <AdminPanelSettingsIcon sx={{ fontSize: '2.5rem' }} />
+          </IconButton>
+        )
+      }
       <IconButton onClick={handleSettings} sx={{ ...iconButtonStyle }}>
         <SettingsIcon sx={{ fontSize: '2.5rem' }} /> {/* Adjust icon size here */}
       </IconButton>

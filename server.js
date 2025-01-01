@@ -19,6 +19,7 @@ const initializeDatabase = require('./init-db');
 const usersRouter = require('./routes/users');
 const ratingsRouter = require('./routes/ratings');
 const settingsRouter = require('./routes/settings');
+const adminRouter = require('./routes/admin');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -65,6 +66,7 @@ console.log("Using endpoint prefix: " + endpointPrefix);
 app.use(endpointPrefix + 'api/users', usersRouter);
 app.use(endpointPrefix + 'api/ratings', ratingsRouter);
 app.use(endpointPrefix + 'api/settings', settingsRouter);
+app.use(endpointPrefix + 'api/admin', adminRouter);
 
 // Start the server
 app.listen(port, () => {

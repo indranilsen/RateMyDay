@@ -18,6 +18,11 @@ function LoginPage() {
 
     try {
       const response = await axios.post(`${ENDPOINT_PREFIX}/api/users/login`, { email, password }, { withCredentials: true });
+      const userRole = response.data.role;
+
+      // Store userRole in localStorage or a React Context or Redux
+      localStorage.setItem('userRole', userRole);
+
       navigate('/month-view'); // Navigate to the month view upon successful login
     } catch (err) {
       setError(err.response?.data?.message || 'Error logging in');

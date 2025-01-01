@@ -4,13 +4,10 @@ const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const moment = require('moment-timezone');
 const { db } = require('./db');
+const { sendEmail } = require('./services/emailService');
 
 const {
   DISABLE_REMINDERS = 'false',
-  DEV_MODE = 'true',
-  GMAIL_USER,
-  GMAIL_PASS,
-  GMAIL_FROM
 } = process.env;
 
 if (DISABLE_REMINDERS.toLowerCase() === 'true') {
@@ -18,19 +15,7 @@ if (DISABLE_REMINDERS.toLowerCase() === 'true') {
   return;
 }
 
-console.log('[Reminders] Starting reminder scheduler. devMode=', DEV_MODE);
-
-// For devMode = false, use real transporter
-let transporter;
-if (DEV_MODE.toLowerCase() === 'false') {
-  transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: GMAIL_USER,
-      pass: GMAIL_PASS
-    }
-  });
-}
+console.log('[Reminders] Starting reminder scheduler.');
 
 /**
  * CRON: runs every hour on the hour
@@ -161,9 +146,6 @@ async function missedRatingsThisWeek(userId, localTz) {
   return missedDates;
 }
 
-/**
- * If devMode=true, we log. Otherwise, we send with nodemailer.
- */
 async function sendReminder(recipientEmail, userId, localTz, cadence, missedDays = []) {
   if (!recipientEmail) return;
 
@@ -182,17 +164,8 @@ async function sendReminder(recipientEmail, userId, localTz, cadence, missedDays
   const appLink = 'https://apps.indranilsen.com/rate-my-day';
   const htmlBody = getReminderEmailHtml(cadence, missedDays, appLink);
 
-  if (DEV_MODE.toLowerCase() === 'true') {
-    console.log(`[DevMode] Would send reminder to: ${recipientEmail}
-    Subject: ${subject}
-    Text Body: ${textBody}`);
-    return;
-  }
-
-  recipientEmail = 'indranilsen010@gmail.com';
   try {
-    await transporter.sendMail({
-      from: GMAIL_FROM || GMAIL_USER,
+    await sendEmail({
       to: recipientEmail,
       subject,
       text: textBody,    // fallback for older email clients

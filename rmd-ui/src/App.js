@@ -7,6 +7,7 @@ import DayRating from './pages/DayRating';
 import MonthView from './pages/MonthView';
 import YearView from './pages/YearView';
 import SettingsPage from './pages/SettingsPage';
+import AdminPage from './pages/AdminPage';
 import CssBaseline from '@mui/material/CssBaseline';
 
 import Layout from './Layout';
@@ -38,6 +39,7 @@ const App = () => {
           <Route path="/year-view/:year" element={<YearView />} />
           <Route path="/year-view" element={<YearView />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           {/* Redirect to /login as default */}
           <Route index element={<Navigate to="/login" />} />
         </Route>
