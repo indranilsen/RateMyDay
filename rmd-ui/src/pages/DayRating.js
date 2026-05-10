@@ -32,12 +32,20 @@ const DayRating = () => {
     const handleUnauthorized = () => {
         navigate('/login');
       };
-  
+
     window.addEventListener('unauthorized', handleUnauthorized);
+
+    // Use the year, month, and day from the route if they exist, otherwise default to today's date
+    const selectedDate = year && month && day
+      ? new Date(parseInt(year), parseInt(month) - 1, parseInt(day)) // Months are 0-indexed in JS
+      : new Date();
+    setDate(selectedDate);
 
     const fetchRating = async () => {
       try {
-        const ratingDate = format(date, 'yyyy-MM-dd');
+        // Fetch against the date derived from the current params, not the
+        // closed-over `date` state — `setDate` above hasn't been applied yet.
+        const ratingDate = format(selectedDate, 'yyyy-MM-dd');
         const response = await axios.get(`${ENDPOINT_PREFIX}/api/ratings/submit-rating`, {
           withCredentials: true,
           params: { ratingDate }
@@ -54,12 +62,6 @@ const DayRating = () => {
       }
     };
 
-    // Use the year, month, and day from the route if they exist, otherwise default to today's date
-    const selectedDate = year && month && day 
-      ? new Date(parseInt(year), parseInt(month) - 1, parseInt(day)) // Months are 0-indexed in JS
-      : new Date();
-    setDate(selectedDate);
-    
     fetchRating();
 
     return () => {
@@ -79,7 +81,7 @@ const DayRating = () => {
   const handleSave = async () => {
     try {
       const ratingDate = format(date, 'yyyy-MM-dd');
-      const response = await axios.post(`${ENDPOINT_PREFIX}/api/ratings/submit-rating`, {
+      await axios.post(`${ENDPOINT_PREFIX}/api/ratings/submit-rating`, {
         ratingDate,
         rating,
         note

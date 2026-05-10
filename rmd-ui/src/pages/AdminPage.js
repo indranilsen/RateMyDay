@@ -22,6 +22,13 @@ import config from '../Config';
 
 const ENDPOINT_PREFIX = config.ENDPOINT_PREFIX;
 
+// Fuzzy search config — module-level so its reference is stable across renders,
+// which keeps it safe to depend on from useEffect without causing re-runs.
+const fuseOptions = {
+  keys: ['email', 'first_name', 'last_name'],
+  threshold: 0.3
+};
+
 const AdminPage = () => {
   const [stats, setStats] = useState({});
   const [emailSubject, setEmailSubject] = useState('');
@@ -34,12 +41,6 @@ const AdminPage = () => {
   const [selectedEmails, setSelectedEmails] = useState([]);
 
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Fuzzy search config
-  const fuseOptions = {
-    keys: ['email', 'first_name', 'last_name'],
-    threshold: 0.3
-  };
 
   useEffect(() => {
     fetchStats();

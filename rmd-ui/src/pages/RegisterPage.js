@@ -26,7 +26,7 @@ function RegisterPage() {
     setError('');
 
     try {
-      const response = await axios.post(`${ENDPOINT_PREFIX}/api/users/register`, formData);
+      await axios.post(`${ENDPOINT_PREFIX}/api/users/register`, formData);
       navigate('/login'); // Navigate to the login page upon successful registration
     } catch (err) {
       setError(err.response?.data?.message || 'Error in registration');

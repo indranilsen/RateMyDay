@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { format, parseISO, getDaysInYear, addDays, isBefore, endOfDay, isSameMonth } from 'date-fns';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Grid, Box, Tooltip, Typography, Paper, Tabs, Tab } from '@mui/material';
 import DayRatingColors from '../RatingColor';
 import config from '../Config';
@@ -12,7 +12,6 @@ const YearView = () => {
   const [ratings, setRatings] = useState({});
   const [availableYears, setAvailableYears] = useState([]);
   const navigate = useNavigate();
-  const { year: paramYear } = useParams();
   const [hoveredMonth, setHoveredMonth] = useState(-1);
   const isMobileSize = window.matchMedia("(max-width: 600px)").matches;
 
@@ -99,7 +98,6 @@ const YearView = () => {
       const cellDate = addDays(startDate, i);
       const color = getRatingColor(cellDate, year);
       const isClickable = isBefore(cellDate, endOfDay(new Date()));
-      const applyHoverEffect = hoveredMonth !== -1 && !isSameMonth(cellDate, new Date(year, hoveredMonth));
 
       cells.push(
         <Grid item key={i} sx={{ width: '14px', height: '14px', margin: '3px' }}>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isSameMonth, isAfter, parse } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isSameMonth, isAfter } from 'date-fns';
 import { Grid, Paper, Typography, Button, Box, Tooltip } from '@mui/material';
 import { useNavigate, useParams } from 'react-router-dom';
 import DayRatingColors from '../RatingColor';
@@ -22,7 +22,7 @@ const MonthView = () => {
   const initialYear = year ? parseInt(year, 10) : new Date().getFullYear();
   const initialMonth = month ? parseInt(month, 10) - 1 : new Date().getMonth();
 
-  const [currentMonth, setCurrentMonth] = useState(new Date(initialYear, initialMonth));
+  const [currentMonth] = useState(new Date(initialYear, initialMonth));
   const [ratings, setRatings] = useState([]);
 
   const isMobileSize = window.matchMedia("(max-width: 600px)").matches;
