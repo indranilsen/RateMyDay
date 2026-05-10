@@ -28,8 +28,6 @@ jobs:
 
       - name: Build frontend
         working-directory: rmd-ui
-        env:
-          CI: false
         run: |
           npm ci
           npm run build
