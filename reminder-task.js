@@ -1,5 +1,4 @@
 // reminder-task.js
-require('dotenv').config();
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const moment = require('moment-timezone');
@@ -17,11 +16,21 @@ if (DISABLE_REMINDERS.toLowerCase() === 'true') {
 
 console.log('[Reminders] Starting reminder scheduler.');
 
+// Re-entrancy guard: if a tick takes longer than an hour (slow SMTP, big user base),
+// don't let the next hourly fire overlap with it.
+let cronRunning = false;
+
 /**
  * CRON: runs every hour on the hour
  */
 let hourlyCron = '0 * * * *';
 cron.schedule(hourlyCron, async () => {
+  if (cronRunning) {
+    console.log('[Reminders] Previous tick still running, skipping this hour.');
+    return;
+  }
+  cronRunning = true;
+
   console.log('[Reminders] Checking for reminders...');
 
   try {
@@ -35,13 +44,18 @@ cron.schedule(hourlyCron, async () => {
          OR JSON_UNQUOTE(JSON_EXTRACT(s.data, '$.sendReminders')) = 'true';
     `);
 
-    for (const row of rows) {
+    // 2) Each user's work is independent; run in parallel so the tick scales
+    // with per-user latency, not with N. The DB pool naturally caps concurrency.
+    await Promise.allSettled(rows.map(async (row) => {
       let userSettings;
       try {
         userSettings = row.data;
+        if (typeof userSettings === 'string') {
+          userSettings = JSON.parse(userSettings);
+        }
       } catch (err) {
-        console.error('Error parsing settings for user', row.userId, err);
-        continue;
+        console.error('[Reminders] Error parsing settings for user', row.userId, err);
+        return;
       }
 
       const userEmail = row.email;
@@ -54,49 +68,50 @@ cron.schedule(hourlyCron, async () => {
       const nowLocal = moment().tz(localTz);
       const [remHour, remMinute] = reminderTime.split(':').map(Number);
 
-      if (nowLocal.hour() === remHour) {
-        // If daily => only send if user hasn't rated,
-        // and if we haven't already sent a reminder today
-        if (reminderCadence === 'daily') {
-          const todayLocal = nowLocal.format('YYYY-MM-DD');
+      if (nowLocal.hour() !== remHour) return;
 
-          // 1) Already sent a reminder today?
-          if (lastSent === todayLocal) {
-            // skip (we only send the reminder once)
-            continue;
-          }
+      // If daily => only send if user hasn't rated,
+      // and if we haven't already sent a reminder today
+      if (reminderCadence === 'daily') {
+        const todayLocal = nowLocal.format('YYYY-MM-DD');
 
-          // 2) Check if user has rating for today
-          const hasRated = await hasUserRatedToday(row.userId, localTz);
-          if (!hasRated) {
-            // Send email, then update lastReminderSent to today's date
-            await sendReminder(userEmail, row.userId, localTz, 'daily');
-            await updateLastReminderSent(row.userId, todayLocal);
-          }
+        // 1) Already sent a reminder today?
+        if (lastSent === todayLocal) {
+          // skip (we only send the reminder once)
+          return;
         }
-        // If weekly => only on Sunday, and only once that Sunday
-        else if (reminderCadence === 'weekly') {
-          if (nowLocal.day() === 0) { // Sunday
-            const sundayDate = nowLocal.format('YYYY-MM-DD');
 
-            // Already sent a reminder this Sunday?
-            if (lastSent === sundayDate) {
-              continue; // skip
-            }
+        // 2) Check if user has rating for today
+        const hasRated = await hasUserRatedToday(row.userId, localTz);
+        if (!hasRated) {
+          // Send email, then update lastReminderSent to today's date
+          await sendReminder(userEmail, row.userId, localTz, 'daily');
+          await updateLastReminderSent(row.userId, todayLocal);
+        }
+        return;
+      }
 
-            // Check if missed any day Monday..Sunday
-            const missedDays = await missedRatingsThisWeek(row.userId, localTz);
-            if (missedDays.length > 0) {
-              await sendReminder(userEmail, row.userId, localTz, 'weekly', missedDays);
-              // Mark lastReminderSent to today's date (the Sunday date)
-              await updateLastReminderSent(row.userId, sundayDate);
-            }
-          }
+      // If weekly => only on Sunday, and only once that Sunday
+      if (reminderCadence === 'weekly') {
+        if (nowLocal.day() !== 0) return; // not Sunday
+        const sundayDate = nowLocal.format('YYYY-MM-DD');
+
+        // Already sent a reminder this Sunday?
+        if (lastSent === sundayDate) return;
+
+        // Check if missed any day Monday..Sunday
+        const missedDays = await missedRatingsThisWeek(row.userId, localTz);
+        if (missedDays.length > 0) {
+          await sendReminder(userEmail, row.userId, localTz, 'weekly', missedDays);
+          // Mark lastReminderSent to today's date (the Sunday date)
+          await updateLastReminderSent(row.userId, sundayDate);
         }
       }
-    }
+    }));
   } catch (error) {
     console.error('[Reminders] Error in cron job:', error);
+  } finally {
+    cronRunning = false;
   }
 });
 
@@ -117,6 +132,7 @@ async function hasUserRatedToday(userId, localTz) {
 
 /**
  * For weekly => Monday..Sunday check.
+ * One range query, diff against the requested days in JS — beats 7 sequential COUNTs.
  */
 async function missedRatingsThisWeek(userId, localTz) {
   const nowLocal = moment().tz(localTz);
@@ -127,18 +143,24 @@ async function missedRatingsThisWeek(userId, localTz) {
     startOfMondayLocal = startOfMondayLocal.subtract(7, 'days');
   }
 
+  // 1) Pull every rated date in the window with a single query
+  const [rows] = await db.query(`
+      SELECT rating_date
+      FROM ratings
+      WHERE user_id = ?
+        AND rating_date BETWEEN ? AND ?`,
+    [userId, startOfMondayLocal.format('YYYY-MM-DD'), endOfSundayLocal.format('YYYY-MM-DD')]
+  );
+  // mysql2 returns DATE columns as JS Date objects; format the same way ratings.js does
+  // to sidestep timezone shifts from the local tz
+  const ratedSet = new Set(rows.map(r => r.rating_date.toISOString().split('T')[0]));
+
+  // 2) Compute the missed dates locally
   const missedDates = [];
   let dayCursor = startOfMondayLocal.clone();
   while (dayCursor.isSameOrBefore(endOfSundayLocal, 'day')) {
     const localDate = dayCursor.format('YYYY-MM-DD');
-    const [rows] = await db.query(`
-        SELECT COUNT(*) AS count
-        FROM ratings
-        WHERE user_id = ?
-          AND rating_date = ?`,
-      [userId, localDate]
-    );
-    if (rows[0].count === 0) {
+    if (!ratedSet.has(localDate)) {
       missedDates.push(localDate);
     }
     dayCursor.add(1, 'day');
@@ -180,29 +202,15 @@ async function sendReminder(recipientEmail, userId, localTz, cadence, missedDays
 
 /**
  * Update the user's settings JSON to store lastReminderSent = someDateString.
+ * Uses JSON_SET so we skip the read-modify-write round-trip (also race-safe).
  */
 async function updateLastReminderSent(userId, dateString) {
-  // We'll fetch the current data, parse it, update lastReminderSent, then store it
   try {
-    // 1) Retrieve current JSON
-    const [rows] = await db.query(`SELECT data FROM settings WHERE user_id = ? LIMIT 1`, [userId]);
-    if (!rows.length) return; // no settings row, skip
-
-    let userSettings = {};
-    try {
-      userSettings = rows[0].data || {};
-    } catch (err) {
-      console.error('[Reminders] Could not parse settings JSON for user', userId, err);
-      return;
-    }
-
-    // 2) Update lastReminderSent
-    userSettings.lastReminderSent = dateString;
-
-    // 3) Write back to DB
     await db.query(
-      'UPDATE settings SET data = ? WHERE user_id = ?',
-      [JSON.stringify(userSettings), userId]
+      `UPDATE settings
+       SET data = JSON_SET(data, '$.lastReminderSent', ?)
+       WHERE user_id = ?`,
+      [dateString, userId]
     );
   } catch (err) {
     console.error('[Reminders] Failed to update lastReminderSent for user', userId, err);

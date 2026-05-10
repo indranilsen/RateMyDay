@@ -1,4 +1,3 @@
-require('dotenv').config();
 const nodemailer = require('nodemailer');
 
 const {
@@ -18,7 +17,10 @@ if (DEV_MODE.toLowerCase() === 'false') {
     auth: {
       user: GMAIL_USER,
       pass: GMAIL_PASS
-    }
+    },
+    // Don't let a stalled SMTP socket pin the cron tick indefinitely
+    connectionTimeout: 10000,
+    socketTimeout: 20000
   });
 }
 

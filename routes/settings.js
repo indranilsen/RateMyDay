@@ -1,7 +1,51 @@
 // routes/settings.js
 const express = require('express');
+const moment = require('moment-timezone');
 const router = express.Router();
 const { db } = require('../db');
+
+// Allowlist + per-field validation for incoming settings payloads.
+// Unknown keys are silently dropped (strict allowlist), bad values are rejected.
+const validateSettings = (body) => {
+  const errors = [];
+  const validated = {};
+
+  if (body == null || typeof body !== 'object') {
+    errors.push('Body must be a JSON object');
+    return { validated, errors };
+  }
+
+  if ('sendReminders' in body) {
+    if (typeof body.sendReminders !== 'boolean') {
+      errors.push('sendReminders must be a boolean');
+    } else {
+      validated.sendReminders = body.sendReminders;
+    }
+  }
+  if ('localTimezone' in body) {
+    if (typeof body.localTimezone !== 'string' || !moment.tz.zone(body.localTimezone)) {
+      errors.push('localTimezone must be a valid IANA timezone');
+    } else {
+      validated.localTimezone = body.localTimezone;
+    }
+  }
+  if ('reminderTime' in body) {
+    if (typeof body.reminderTime !== 'string' || !/^\d{2}:\d{2}$/.test(body.reminderTime)) {
+      errors.push('reminderTime must be in HH:MM format');
+    } else {
+      validated.reminderTime = body.reminderTime;
+    }
+  }
+  if ('reminderCadence' in body) {
+    if (body.reminderCadence !== 'daily' && body.reminderCadence !== 'weekly') {
+      errors.push('reminderCadence must be "daily" or "weekly"');
+    } else {
+      validated.reminderCadence = body.reminderCadence;
+    }
+  }
+
+  return { validated, errors };
+};
 
 // Retrieve the current user's settings
 router.get('/', async (req, res) => {
@@ -41,7 +85,11 @@ router.post('/', async (req, res) => {
     return res.status(403).json({ message: 'Not logged in' });
   }
 
-  const newSettings = req.body; // Already a JavaScript object
+  // Validate against the allowlist before touching the DB
+  const { validated: newSettings, errors } = validateSettings(req.body);
+  if (errors.length > 0) {
+    return res.status(400).json({ message: 'Invalid settings', errors });
+  }
 
   try {
     // 1) Load existing row

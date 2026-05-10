@@ -3,21 +3,32 @@ const disk = require('diskusage-ng');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const sanitizeHtml = require('sanitize-html');
 const router = express.Router();
 const { db } = require('../db');
 const { sendEmail } = require('../services/emailService');
+
+// Cap for the ad-hoc email blaster; anything larger is almost certainly a mistake
+const MAX_RECIPIENTS = 1000;
+const EMAIL_BATCH_SIZE = 10;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Middleware: Check if user is admin
 router.use(async (req, res, next) => {
   if (!req.session.userId) {
     return res.status(403).json({ message: 'Not logged in' });
   }
-  // Query the user's role
-  const [rows] = await db.query('SELECT user_role FROM users WHERE id=?', [req.session.userId]);
-  if (!rows.length || rows[0].user_role !== 'admin') {
-    return res.status(403).json({ message: 'Not authorized' });
+  try {
+    // Query the user's role
+    const [rows] = await db.query('SELECT user_role FROM users WHERE id=?', [req.session.userId]);
+    if (!rows.length || rows[0].user_role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+    next();
+  } catch (err) {
+    console.error('Error checking admin role', err);
+    next(err);
   }
-  next();
 });
 
 /**
@@ -131,15 +142,38 @@ router.post('/send-emails', async (req, res) => {
       recipients = emails;
     }
 
-    for (const email of recipients) {
-      await sendEmail({
-        to: email,
-        subject,
-        html: body
-      });
+    // 1) Validate every address before we send anything
+    const invalid = recipients.filter(e => typeof e !== 'string' || !EMAIL_REGEX.test(e));
+    if (invalid.length > 0) {
+      return res.status(400).json({ message: 'Invalid recipient email(s)', invalid });
     }
 
-    return res.status(200).json({ message: 'Emails sent successfully' });
+    // 2) Cap so an accidental "send to everyone forever" can't actually do it
+    if (recipients.length > MAX_RECIPIENTS) {
+      return res.status(400).json({ message: `Too many recipients (max ${MAX_RECIPIENTS})` });
+    }
+
+    // 3) Strip dangerous HTML — never trust admin input as raw mail body
+    const cleanBody = sanitizeHtml(body);
+
+    // 4) Send in parallel batches so the HTTP request doesn't block per-recipient
+    const results = [];
+    for (let i = 0; i < recipients.length; i += EMAIL_BATCH_SIZE) {
+      const chunk = recipients.slice(i, i + EMAIL_BATCH_SIZE);
+      const settled = await Promise.allSettled(chunk.map(email => sendEmail({
+        to: email,
+        subject,
+        html: cleanBody
+      })));
+      results.push(...settled);
+    }
+
+    const failed = results.filter(r => r.status === 'rejected').length;
+    const sent = results.length - failed;
+    if (failed > 0) {
+      console.error(`[Admin] send-emails: ${failed}/${results.length} failed`);
+    }
+    return res.status(200).json({ message: 'Emails sent', sent, failed });
   } catch (err) {
     console.error('Error sending emails', err);
     res.status(500).json({ message: 'Error sending emails' });

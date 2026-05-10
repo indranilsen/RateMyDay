@@ -1,8 +1,19 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
 const { db } = require('../db');
 
 const router = express.Router();
+
+// Slow down brute-force attempts. 5 attempts/minute/IP is loose enough for a
+// fat-finger user but tight enough to make credential stuffing painful.
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many login attempts. Please try again in a minute.' }
+});
 
 // Registration endpoint
 router.post('/register', async (req, res) => {
@@ -37,7 +48,7 @@ router.post('/register', async (req, res) => {
 });
 
 // Login endpoint
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -45,8 +56,8 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    // Retrieve user from the database
-    const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+    // Retrieve user from the database (only the columns we actually need)
+    const [users] = await db.query('SELECT id, password, user_role FROM users WHERE email = ?', [email]);
     const user = users[0];
 
     if (!user) {
