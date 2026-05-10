@@ -1,0 +1,94 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 21
+        uses: actions/setup-node@v4
+        with:
+          node-version: '21'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            rmd-ui/package-lock.json
+
+      - name: Build frontend
+        working-directory: rmd-ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Sync frontend to /var/www
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            rmd-ui/build/ \
+            "$SSH_USER@$SSH_HOST:/var/www/rmd-ui/build/"
+
+      - name: Sync backend source to /root/RateMyDay
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            --exclude='/rmd-ui' \
+            --exclude='/node_modules' \
+            --exclude='/.env*' \
+            --exclude='/.git' \
+            --exclude='/.github' \
+            ./ \
+            "$SSH_USER@$SSH_HOST:/root/RateMyDay/"
+
+      - name: Install backend deps + restart pm2
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" bash <<'EOF'
+            set -euo pipefail
+            export NVM_DIR="$HOME/.nvm"
+            # shellcheck source=/dev/null
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            cd /root/RateMyDay
+            npm ci --omit=dev
+            pm2 reload RateMyDay --update-env
+            pm2 save
+          EOF
+
+      - name: Smoke test
+        run: |
+          # Allow a few seconds for pm2 to swap the process
+          sleep 5
+          status=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 https://apps.indranilsen.com/rate-my-day/)
+          echo "HTTP $status"
+          [ "$status" = "200" ]
