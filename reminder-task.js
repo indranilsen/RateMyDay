@@ -2,7 +2,7 @@
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const moment = require('moment-timezone');
-const { db } = require('./db');
+const { db, listReminderCandidates } = require('./db');
 const { sendEmail } = require('./services/emailService');
 
 const {
@@ -34,15 +34,9 @@ cron.schedule(hourlyCron, async () => {
   console.log('[Reminders] Checking for reminders...');
 
   try {
-    // 1) Get all users with sendReminders = true
-    // We'll need to read lastReminderSent from the same JSON column
-    const [rows] = await db.query(`
-      SELECT u.id AS userId, u.email, s.data
-      FROM users u
-             JOIN settings s ON u.id = s.user_id
-      WHERE JSON_EXTRACT(s.data, '$.sendReminders') = true
-         OR JSON_UNQUOTE(JSON_EXTRACT(s.data, '$.sendReminders')) = 'true';
-    `);
+    // 1) Get all users with sendReminders = true (dialect-specific JSON_EXTRACT
+    // comparison delegated to the backend so MySQL and SQLite both work)
+    const rows = await listReminderCandidates();
 
     // 2) Each user's work is independent; run in parallel so the tick scales
     // with per-user latency, not with N. The DB pool naturally caps concurrency.

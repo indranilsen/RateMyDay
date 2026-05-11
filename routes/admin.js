@@ -2,11 +2,16 @@ const os = require('os');
 const disk = require('diskusage-ng');
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const express = require('express');
 const sanitizeHtml = require('sanitize-html');
 const router = express.Router();
-const { db } = require('../db');
+const { db, getPoolStats } = require('../db');
 const { sendEmail } = require('../services/emailService');
+const requestStats = require('../request-stats');
+
+const execFileAsync = promisify(execFile);
 
 // Cap for the ad-hoc email blaster; anything larger is almost certainly a mistake
 const MAX_RECIPIENTS = 1000;
@@ -40,61 +45,55 @@ router.get('/stats', async (req, res) => {
     const hostname = os.hostname();
     const nodeVersion = process.version;
 
-    // CPU load (1m, 5m, 15m):
-    const load = os.loadavg(); // array of [1,5,15] minute loads
-    const cpuLoad1m = load[0].toFixed(2);
-    const cpuLoad5m = load[1].toFixed(2);
-    const cpuLoad15m = load[2].toFixed(2);
-    // We can define an average as (1m+5m+15m)/3:
-    const cpuLoadAvg = ((load[0] + load[1] + load[2]) / 3).toFixed(2);
+    // 1) CPU — raw numbers; the frontend turns them into bars/sparklines
+    const load = os.loadavg();
+    const cpuCount = os.cpus().length;
+    const cpuLoad = {
+      l1: load[0],
+      l5: load[1],
+      l15: load[2],
+      avg: (load[0] + load[1] + load[2]) / 3
+    };
 
-    // Physical memory used by this Node.js process
-    // process.memoryUsage() returns an object with heapUsed, rss, etc.
-    // We’ll use rss (resident set size) as a measure of total memory usage for the process
-    const memUsage = process.memoryUsage();
-    const rssMB = (memUsage.rss / 1024 / 1024).toFixed(2);
-    const memoryUsage = `RSS: ${rssMB} MB`;
+    // 2) Memory — both process RSS and system-wide so the page can show a real % bar
+    const memProc = process.memoryUsage();
+    const memory = {
+      rssBytes: memProc.rss,
+      heapUsedBytes: memProc.heapUsed,
+      heapTotalBytes: memProc.heapTotal,
+      totalBytes: os.totalmem(),
+      freeBytes: os.freemem(),
+      usedBytes: os.totalmem() - os.freemem()
+    };
 
-    // If you also want to see heap used:
-    // const heapUsedMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
-
-    // Disk usage
-    // We’ll pick root directory or whichever relevant path:
-    let diskUsage = 'N/A';
+    // 3) Disk — same idea, raw bytes
+    let disk = null;
     try {
       const root = path.parse(process.cwd()).root;
       const info = await getDiskUsageAsync(root);
-      // info.available, info.total, info.used
-      diskUsage = `
-               used ${(info.used / 1024 / 1024 / 1024).toFixed(2)} GB, 
-               total ${(info.total / 1024 / 1024 / 1024).toFixed(2)} GB,
-               available ${(info.available / 1024 / 1024 / 1024).toFixed(2)} GB
-               `;
+      disk = {
+        usedBytes: info.used,
+        totalBytes: info.total,
+        availableBytes: info.available
+      };
     } catch (err) {
       console.log('diskusage error:', err);
     }
 
-    // # of users
+    // 4) User count + uptime
     const [userCountRows] = await db.query('SELECT COUNT(*) as count FROM users');
     const userCount = userCountRows[0].count;
-
-    // We can add more relevant stats:
-    //  - uptime: how long the process has been running
-    //  - environment: dev/prod, etc.
     const uptimeSeconds = process.uptime();
-    const uptimeFormatted = `${(uptimeSeconds / 60).toFixed(2)} minutes`;
 
     res.json({
       hostname,
       nodeVersion,
-      cpuLoad1m,
-      cpuLoad5m,
-      cpuLoad15m,
-      cpuLoadAvg,
-      memoryUsage,
-      diskUsage,
+      cpuCount,
+      cpuLoad,
+      memory,
+      disk,
       userCount,
-      uptime: uptimeFormatted
+      uptimeSeconds
     });
   } catch (err) {
     console.error('Error retrieving stats', err);
@@ -104,15 +103,195 @@ router.get('/stats', async (req, res) => {
 
 /**
  * GET /api/admin/users
- * Return a list of all users (or maybe just emails, if we want to keep it minimal)
+ * Paginated + searchable user list. Query params:
+ *   q       - optional search string (matches email / first_name / last_name)
+ *   limit   - page size (default 10, max 100)
+ *   offset  - skip count (default 0)
+ * Response: { users, total, hasMore }
  */
 router.get('/users', async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT email, first_name, last_name FROM users');
-    res.json(rows);
+    const q = (req.query.q || '').toString().trim();
+    let limit = parseInt(req.query.limit, 10);
+    let offset = parseInt(req.query.offset, 10);
+    if (!Number.isFinite(limit) || limit <= 0) limit = 10;
+    if (limit > 100) limit = 100;
+    if (!Number.isFinite(offset) || offset < 0) offset = 0;
+
+    // 1) Build the WHERE clause and shared param list. LOWER() on both sides
+    // so LIKE works case-insensitively in both MySQL and SQLite.
+    let where = '';
+    const params = [];
+    if (q.length > 0) {
+      where = `WHERE LOWER(email) LIKE ? OR LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ?`;
+      const needle = `%${q.toLowerCase()}%`;
+      params.push(needle, needle, needle);
+    }
+
+    // 2) Total count for the same filter
+    const [countRows] = await db.query(`SELECT COUNT(*) AS total FROM users ${where}`, params);
+    const total = countRows[0].total;
+
+    // 3) Page of rows
+    const [rows] = await db.query(
+      `SELECT id, email, first_name, last_name, user_role
+       FROM users
+       ${where}
+       ORDER BY id ASC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    res.json({
+      users: rows,
+      total,
+      hasMore: offset + rows.length < total
+    });
   } catch (err) {
     console.error('Error retrieving user list', err);
     res.status(500).json({ message: 'Error retrieving user list' });
+  }
+});
+
+/**
+ * GET /api/admin/users/:id
+ * Detail view + stats for a single user
+ */
+router.get('/users/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ message: 'Invalid user id' });
+  }
+
+  try {
+    // 1) Base user record
+    const [users] = await db.query(
+      'SELECT id, first_name, last_name, dob, email, user_role, created_at FROM users WHERE id = ?',
+      [id]
+    );
+    if (!users.length) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    const user = users[0];
+
+    // 2) Stats: total rating count + most recent rating date
+    const [statsRows] = await db.query(
+      'SELECT COUNT(*) AS ratingCount, MAX(rating_date) AS lastRatingDate FROM ratings WHERE user_id = ?',
+      [id]
+    );
+    const stats = statsRows[0] || { ratingCount: 0, lastRatingDate: null };
+
+    res.json({
+      ...user,
+      ratingCount: stats.ratingCount,
+      lastRatingDate: stats.lastRatingDate
+    });
+  } catch (err) {
+    console.error('Error retrieving user detail', err);
+    res.status(500).json({ message: 'Error retrieving user detail' });
+  }
+});
+
+/**
+ * POST /api/admin/users/bulk-delete
+ * Body: { userIds: number[] }
+ * Returns { deleted, skipped: [{id, reason}] }
+ * Same guards as the single-delete: skip self, skip other admins. Capped to
+ * 1000 ids per request so an accidental "select everyone" can't run forever.
+ */
+router.post('/users/bulk-delete', async (req, res) => {
+  const { userIds } = req.body || {};
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    return res.status(400).json({ message: 'userIds[] required' });
+  }
+  if (userIds.length > 1000) {
+    return res.status(400).json({ message: 'Too many ids (max 1000)' });
+  }
+
+  const skipped = [];
+  let deleted = 0;
+  for (const rawId of userIds) {
+    const id = parseInt(rawId, 10);
+    if (!Number.isFinite(id)) {
+      skipped.push({ id: rawId, reason: 'invalid id' });
+      continue;
+    }
+    if (id === req.session.userId) {
+      skipped.push({ id, reason: 'self' });
+      continue;
+    }
+    try {
+      const [rows] = await db.query('SELECT id, user_role FROM users WHERE id = ?', [id]);
+      if (!rows.length) {
+        skipped.push({ id, reason: 'not found' });
+        continue;
+      }
+      if (rows[0].user_role === 'admin') {
+        skipped.push({ id, reason: 'admin' });
+        continue;
+      }
+      await db.query('DELETE FROM users WHERE id = ?', [id]);
+      deleted++;
+    } catch (err) {
+      console.error(`[Admin] bulk-delete failed for id=${id}`, err);
+      skipped.push({ id, reason: 'error' });
+    }
+  }
+
+  console.log(`[Admin] bulk-delete by admin id=${req.session.userId}: deleted=${deleted} skipped=${skipped.length}`);
+  res.json({ deleted, skipped });
+});
+
+/**
+ * DELETE /api/admin/users/:id
+ * Body: { confirmEmail }
+ * Guards: refuses self-delete, refuses deleting another admin.
+ * Cascades to ratings and settings via FK ON DELETE CASCADE.
+ */
+router.delete('/users/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ message: 'Invalid user id' });
+  }
+  const { confirmEmail } = req.body || {};
+  if (!confirmEmail || typeof confirmEmail !== 'string') {
+    return res.status(400).json({ message: 'confirmEmail is required' });
+  }
+
+  try {
+    // 1) Look up target user
+    const [users] = await db.query(
+      'SELECT id, email, user_role FROM users WHERE id = ?',
+      [id]
+    );
+    if (!users.length) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    const target = users[0];
+
+    // 2) Refuse self-delete — admin must keep at least themselves around.
+    // Using 409 (not 403) so the axios interceptor doesn't log the admin out.
+    if (target.id === req.session.userId) {
+      return res.status(409).json({ message: 'Cannot delete your own account' });
+    }
+
+    // 3) Refuse deleting another admin (operator must drop role manually first)
+    if (target.user_role === 'admin') {
+      return res.status(409).json({ message: 'Cannot delete another admin user' });
+    }
+
+    // 4) Confirm-by-email gate
+    if (target.email !== confirmEmail) {
+      return res.status(400).json({ message: 'confirmEmail does not match the user' });
+    }
+
+    // 5) Delete. FK cascade clears ratings + settings rows.
+    await db.query('DELETE FROM users WHERE id = ?', [id]);
+    console.log(`[Admin] User ${target.email} (id=${id}) deleted by admin id=${req.session.userId}`);
+    res.status(204).end();
+  } catch (err) {
+    console.error('Error deleting user', err);
+    res.status(500).json({ message: 'Error deleting user' });
   }
 });
 
@@ -189,5 +368,112 @@ const getDiskUsageAsync = (path) => {
     });
   });
 };
+
+/**
+ * GET /api/admin/health-metrics
+ * Live counters for the admin Health & Activity panel.
+ *   - request: in-process counters (total + last 5 min by status class)
+ *   - pool: mysql2 pool stats (null in SQLite mode)
+ *   - uptimeSeconds: how long this Node process has been alive
+ */
+router.get('/health-metrics', async (req, res) => {
+  try {
+    res.json({
+      request: requestStats.snapshot(),
+      pool: typeof getPoolStats === 'function' ? getPoolStats() : null,
+      uptimeSeconds: process.uptime()
+    });
+  } catch (err) {
+    console.error('Error retrieving health metrics', err);
+    res.status(500).json({ message: 'Error retrieving health metrics' });
+  }
+});
+
+/**
+ * Resolve the running RateMyDay process record from `pm2 jlist`. Returns null
+ * if PM2 isn't installed, isn't running, or doesn't know about us — callers
+ * surface a 503 in those cases.
+ */
+async function getPm2App() {
+  try {
+    const { stdout } = await execFileAsync('pm2', ['jlist'], { timeout: 5000 });
+    const list = JSON.parse(stdout);
+    return list.find(a => a.name === 'RateMyDay') || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * GET /api/admin/pm2/status
+ * Returns a small snapshot of the PM2-managed app.
+ */
+router.get('/pm2/status', async (req, res) => {
+  const app = await getPm2App();
+  if (!app) {
+    return res.status(503).json({ message: 'PM2 not available' });
+  }
+  res.json({
+    name: app.name,
+    status: app.pm2_env.status,
+    restarts: app.pm2_env.restart_time,
+    unstableRestarts: app.pm2_env.unstable_restarts,
+    pmUptime: app.pm2_env.pm_uptime,
+    pid: app.pid,
+    memoryBytes: app.monit ? app.monit.memory : null,
+    cpuPercent: app.monit ? app.monit.cpu : null,
+    execMode: app.pm2_env.exec_mode,
+    nodeVersion: app.pm2_env.node_version
+  });
+});
+
+/**
+ * GET /api/admin/pm2/logs?type=out|err&lines=N
+ * Tails the most recent N lines from PM2's log file for the app. Log paths
+ * are read from `pm2 jlist` so this works regardless of PM2 config.
+ */
+router.get('/pm2/logs', async (req, res) => {
+  const type = req.query.type === 'err' ? 'err' : 'out';
+  let lines = parseInt(req.query.lines, 10);
+  if (!Number.isFinite(lines) || lines <= 0) lines = 100;
+  if (lines > 500) lines = 500;
+
+  const app = await getPm2App();
+  if (!app) {
+    return res.status(503).json({ message: 'PM2 not available' });
+  }
+  const logPath = type === 'err' ? app.pm2_env.pm_err_log_path : app.pm2_env.pm_out_log_path;
+  if (!logPath) {
+    return res.status(404).json({ message: `No ${type} log path configured` });
+  }
+
+  try {
+    const { stdout } = await execFileAsync('tail', ['-n', String(lines), logPath], { timeout: 5000, maxBuffer: 2 * 1024 * 1024 });
+    res.json({ type, path: logPath, lines: stdout.split('\n') });
+  } catch (err) {
+    console.error('[Admin] pm2 logs failed', err);
+    res.status(500).json({ message: 'Failed to read PM2 logs' });
+  }
+});
+
+/**
+ * POST /api/admin/pm2/restart
+ * Triggers `pm2 reload` — graceful, picks up env changes. Responds first
+ * because the current process is the one being replaced.
+ */
+router.post('/pm2/restart', async (req, res) => {
+  const app = await getPm2App();
+  if (!app) {
+    return res.status(503).json({ message: 'PM2 not available' });
+  }
+  console.log(`[Admin] pm2 reload initiated by admin id=${req.session.userId}`);
+  res.json({ message: 'Reload initiated' });
+  // Give the response a moment to flush before PM2 swaps the process
+  setTimeout(() => {
+    execFile('pm2', ['reload', 'RateMyDay'], (err) => {
+      if (err) console.error('[Admin] pm2 reload failed', err);
+    });
+  }, 200);
+});
 
 module.exports = router;

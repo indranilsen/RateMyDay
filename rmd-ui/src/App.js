@@ -7,7 +7,12 @@ import DayRating from './pages/DayRating';
 import MonthView from './pages/MonthView';
 import YearView from './pages/YearView';
 import SettingsPage from './pages/SettingsPage';
-import AdminPage from './pages/AdminPage';
+import AdminLayout from './pages/admin/AdminLayout';
+import SystemStatsPage from './pages/admin/SystemStatsPage';
+import AdHocEmailsPage from './pages/admin/AdHocEmailsPage';
+import ManageUsersPage from './pages/admin/ManageUsersPage';
+import UserDetailPage from './pages/admin/UserDetailPage';
+import OperationsPage from './pages/admin/OperationsPage';
 import CssBaseline from '@mui/material/CssBaseline';
 
 import Layout from './Layout';
@@ -39,7 +44,14 @@ const App = () => {
           <Route path="/year-view/:year" element={<YearView />} />
           <Route path="/year-view" element={<YearView />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<Navigate to="stats" replace />} />
+            <Route path="stats" element={<SystemStatsPage />} />
+            <Route path="emails" element={<AdHocEmailsPage />} />
+            <Route path="users" element={<ManageUsersPage />} />
+            <Route path="users/:userId" element={<UserDetailPage />} />
+            <Route path="operations" element={<OperationsPage />} />
+          </Route>
           {/* Redirect to /login as default */}
           <Route index element={<Navigate to="/login" />} />
         </Route>

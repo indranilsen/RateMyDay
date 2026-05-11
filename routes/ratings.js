@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../db');
+const { db, getAvailableYears } = require('../db');
 
 const { format } = require('date-fns');
 
@@ -146,15 +146,8 @@ router.get('/available-years', async (req, res) => {
     }
   
     try {
-      // Retrieve all distinct years for which the given user has rating data
-      const [yearsData] = await db.query(
-        'SELECT DISTINCT YEAR(rating_date) AS year FROM ratings WHERE user_id = ? ORDER BY year DESC',
-        [userId]
-      );
-  
-      // Extract just the years from the query result
-      const years = yearsData.map(item => item.year);
-  
+      // Dialect-specific (MySQL YEAR() vs SQLite strftime) — delegated to the backend
+      const years = await getAvailableYears(userId);
       res.json(years);
     } catch (error) {
       console.error(error);
