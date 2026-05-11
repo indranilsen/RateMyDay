@@ -49,7 +49,10 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
         run: |
-          rsync -az --delete \
+          # --chown normalizes the destination ownership to www-data:www-data
+          # so nginx serves files owned by its own user instead of the GHA
+          # runner's UID. The remote rsync (root) applies the chown.
+          rsync -az --delete --chown=www-data:www-data \
             -e "ssh -i ~/.ssh/deploy_key" \
             rmd-ui/build/ \
             "$SSH_USER@$SSH_HOST:/var/www/rmd-ui/build/"

@@ -38,6 +38,11 @@ const adminRouter = require('./routes/admin');
 const app = express();
 const port = process.env.PORT || 3001;
 
+// Trust the first hop (nginx) so req.ip and req.protocol reflect the real
+// client, not the loopback. Without this the rate limiter would key every
+// request to '::1' and treat all traffic as one bucket.
+app.set('trust proxy', 1);
+
 // Latched once SIGTERM/SIGINT arrives. The drain middleware below checks this
 // on every request so we stop accepting work the instant shutdown begins,
 // even on already-open keep-alive connections.
