@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { format, parseISO, getDaysInYear, addDays, isBefore, endOfDay, isSameMonth } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -44,9 +44,25 @@ const YearView = () => {
     });
   }, [availableYears]);
 
+  // O(1) lookup map per year, rebuilt only when ratings change. Replaces the
+  // per-cell linear .find() that was scanning the whole ratings array on
+  // every render (and every hover, since hoveredMonth state triggers a
+  // re-render across all ~365 cells × N years).
+  const ratingsByDate = useMemo(() => {
+    const out = {};
+    for (const year of Object.keys(ratings)) {
+      const m = new Map();
+      for (const r of ratings[year]) {
+        m.set(format(parseISO(r.rating_date), 'yyyy-MM-dd'), r.rating);
+      }
+      out[year] = m;
+    }
+    return out;
+  }, [ratings]);
+
   const getRatingColor = (date, year) => {
-    const ratingForDate = ratings[year]?.find(r => format(parseISO(r.rating_date), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
-    return ratingForDate ? DayRatingColors[ratingForDate.rating] : 'transparent';
+    const rating = ratingsByDate[year]?.get(format(date, 'yyyy-MM-dd'));
+    return rating ? DayRatingColors[rating] : 'transparent';
   };
 
   const handleCellClick = (date, year) => {

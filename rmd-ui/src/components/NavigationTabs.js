@@ -2,6 +2,7 @@ import React from 'react';
 import { AppBar, Tabs, Tab, Box, useMediaQuery, useTheme } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Menu from './Menu';
+import ThemeToggle from './ThemeToggle';
 
 const NavigationTabs = () => {
   const navigate = useNavigate();
@@ -24,8 +25,8 @@ const NavigationTabs = () => {
   };
 
   return (
-    <AppBar elevation={0} position="relative" color="default" sx={{ 
-      backgroundColor: '#ffffff',
+    <AppBar elevation={0} position="relative" color="default" sx={{
+      backgroundColor: 'background.default',
       display: 'flex',
       justifyContent: 'center',
       flexDirection: 'column',
@@ -33,15 +34,48 @@ const NavigationTabs = () => {
       marginBottom: '1em',
       padding: theme.spacing(2, 0),
       '&.MuiTabs-indicator': {
-        backgroundColor: '#ffffff',
         boxShadow: 'none'
       }
      }}>
-      {/* Conditionally render the Menu based on the screen size */}
-      {isMobile && <Menu isMobile={isMobile} />}
+      {/* Mobile: top row with the theme toggle on the left and the icon
+          menu on the right, mirroring the desktop's absolute-positioned
+          left/right layout. */}
+      {isMobile && (
+        <Box sx={{
+          width: '100%',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingLeft: '10px',
+          paddingRight: '10px',
+          mb: 1
+        }}>
+          <ThemeToggle />
+          <Menu isMobile={isMobile} />
+        </Box>
+      )}
+
+      {/* Desktop: theme toggle floats absolute top-left, mirroring the
+          icon menu on the top-right. The 18px left padding lines the pill's
+          edge up with the icon glyphs on the right (which are visually
+          inset by ~18px because of the IconButton's intrinsic padding). */}
+      {!isMobile && (
+        <Box sx={{
+          position: 'absolute',
+          left: 0,
+          top: 'auto',
+          padding: '10px 10px 10px 18px',
+          height: '64px',
+          display: 'flex',
+          alignItems: 'center'
+        }}>
+          <ThemeToggle />
+        </Box>
+      )}
       <Box sx={{
-        border: '1px solid grey', 
-        backgroundColor: '#ffffff',
+        border: '1px solid',
+        borderColor: 'divider',
+        backgroundColor: 'background.paper',
         display: 'flex',
         borderRadius: '4px',
         width: 'auto',
@@ -61,16 +95,18 @@ const NavigationTabs = () => {
           }}
         >
           {tabs.map((tab, index) => (
-            <Tab 
-              key={index} 
+            <Tab
+              key={index}
               label={tab.label}
-              sx={{ 
+              sx={{
                 letterSpacing: '0.06em',
-                backgroundColor: currentTab === index ? 'rgba(224, 224, 224, 0.4)' : 'inherit',
+                // `action.selected` and `text.primary` are theme-aware so the
+                // selected pill has enough contrast in both light and dark
+                backgroundColor: currentTab === index ? 'action.selected' : 'inherit',
                 borderRadius: '4px',
                 '&.Mui-selected': {
-                  backgroundColor: 'rgba(224, 224, 224, 0.4)',
-                  color: 'grey',
+                  backgroundColor: 'action.selected',
+                  color: 'text.primary',
                 },
               }}
             />

@@ -105,12 +105,21 @@ const MonthView = () => {
                     sx={{
                       width: '64px',
                       height: '64px',
-                      border: '1px solid grey',
+                      border: '1px solid',
+                      borderColor: 'divider',
                       borderRadius: '4px',
-                      color: 'grey',
+                      // Rated cells keep their palette color; unrated/disabled use a
+                      // theme-aware muted surface so the day number stays readable
+                      // in both light and dark modes.
+                      color: rating ? 'grey' : 'text.secondary',
                       backgroundColor: getRatingColor(rating),
-                      '&.Mui-disabled': { backgroundColor: '#e0e0e0' },
-                      '&:hover': { backgroundColor: rating ? `${getRatingColor(rating)}aa` : '#f5f5f5' },
+                      '&.Mui-disabled': {
+                        backgroundColor: 'action.hover',
+                        color: 'text.disabled'
+                      },
+                      '&:hover': {
+                        backgroundColor: rating ? `${getRatingColor(rating)}aa` : 'action.selected'
+                      },
                     }}
                   >
                     {format(day, 'd')}

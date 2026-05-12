@@ -176,9 +176,15 @@ async function sendReminder(recipientEmail, userId, localTz, cadence, missedDays
     textBody += missedDays.map(d => ` - ${d}`).join('\n');
   }
 
-  // Create your fancy HTML body
+  // The "rate today" buttons in the email link back to /rate?date=...&value=N.
+  // Pick the most-relevant date for this reminder:
+  //   daily  -> today in the user's local TZ
+  //   weekly -> most-recent missed day (closest to "now")
   const appLink = 'https://apps.indranilsen.com/rate-my-day';
-  const htmlBody = getReminderEmailHtml(cadence, missedDays, appLink);
+  const targetDate = cadence === 'weekly' && missedDays.length > 0
+    ? missedDays[missedDays.length - 1]
+    : moment().tz(localTz).format('YYYY-MM-DD');
+  const htmlBody = getReminderEmailHtml(cadence, missedDays, appLink, targetDate);
 
   try {
     await sendEmail({
@@ -211,7 +217,50 @@ async function updateLastReminderSent(userId, dateString) {
   }
 }
 
-function getReminderEmailHtml(cadence, missedDays, appLink) {
+// Inlined 10-step rating palette so the email is self-contained — email
+// clients won't import a JS module, so we duplicate the values from
+// RatingColor.js here.
+const REMINDER_PALETTE = {
+  1:  '#ff3e36', 2:  '#ff643c', 3:  '#ff7c42', 4:  '#ff9746', 5:  '#ffb44b',
+  6:  '#ffd24f', 7:  '#ddde55', 8:  '#b0d85a', 9:  '#85d15f', 10: '#5eca64'
+};
+
+// Build a one-click rating row as a table — most email clients hate flex
+// but render tables reliably. Each cell links to /rate?date=...&value=N
+// which the SPA's RateRedirect picks up and submits.
+function buildRateButtonsHtml(appLink, targetDate) {
+  const cells = [];
+  for (let n = 1; n <= 10; n++) {
+    const href = `${appLink}/rate?date=${targetDate}&value=${n}`;
+    const bg = REMINDER_PALETTE[n];
+    cells.push(`
+      <td style="padding: 2px;">
+        <a href="${href}" style="
+          display: inline-block;
+          width: 32px;
+          height: 32px;
+          line-height: 32px;
+          text-align: center;
+          background-color: ${bg};
+          color: #ffffff;
+          text-decoration: none;
+          font-weight: 500;
+          font-size: 14px;
+          border-radius: 4px;
+        ">${n}</a>
+      </td>`);
+  }
+  return `
+    <p style="margin: 16px 0 8px 0; color: #808080; font-size: 14px; letter-spacing: 0.04em;">
+      Rate ${targetDate} in one click:
+    </p>
+    <table style="margin: 0 auto; border-collapse: collapse;">
+      <tr>${cells.join('')}</tr>
+    </table>
+  `;
+}
+
+function getReminderEmailHtml(cadence, missedDays, appLink, targetDate) {
   // Build some dynamic content
   let contentParagraph = '';
   if (cadence === 'daily') {
@@ -228,10 +277,12 @@ function getReminderEmailHtml(cadence, missedDays, appLink) {
 
     contentParagraph = `
       We noticed you missed the following days. Take a moment to reflect on how your week went and how you're feeling.
-      
+
       <ul>${missedList}</ul>
     `;
   }
+
+  const rateButtonsHtml = targetDate ? buildRateButtonsHtml(appLink, targetDate) : '';
 
   // Return an HTML template (inline styles for cross-client compatibility)
   return `
@@ -274,6 +325,10 @@ function getReminderEmailHtml(cadence, missedDays, appLink) {
         ${contentParagraph}
     </p>
     <div style="text-align: center; margin: 24px 0;">
+        ${rateButtonsHtml}
+        <p style="margin: 24px 0 8px 0; color: #808080; font-size: 14px;">
+          Or open the app to add a note:
+        </p>
         <a href="${appLink}" style="
         display: inline-block;
         border: 1px solid #2477C8FF;

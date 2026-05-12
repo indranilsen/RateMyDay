@@ -168,23 +168,26 @@ const DayRating = () => {
                 },
             }}
         />
-        <Button elevation={0} variant="outlined" onClick={handleSave} endIcon={<SaveIcon />} sx={{ 
+        <Button elevation={0} variant="outlined" onClick={handleSave} endIcon={<SaveIcon />} sx={{
             mb: 3,
             boxShadow: 'none',
-            border: '1px solid grey',
-            color: 'grey',
-            backgroundColor: 'white',
+            // Theme-aware so this doesn't render as white-on-dark in dark mode
+            border: '1px solid',
+            borderColor: 'text.secondary',
+            color: 'text.secondary',
+            backgroundColor: 'background.paper',
             marginTop: '1em',
             letterSpacing: '0.06em',
             '&:hover': {
-                color: 'white',
-                backgroundColor: 'grey',
-                border: '1px solid grey',
+                color: 'background.paper',
+                backgroundColor: 'text.secondary',
+                borderColor: 'text.secondary',
                 boxShadow: 'none',
               },
             '&:active': {
-                backgroundColor: 'grey',
-                border: '2px solid grey',
+                backgroundColor: 'text.secondary',
+                borderColor: 'text.secondary',
+                borderWidth: '2px',
                 boxShadow: 'none',
             }
             }}>

@@ -16,6 +16,7 @@ import {
 import SaveIcon from '@mui/icons-material/Save';
 import moment from 'moment-timezone';
 import config from '../Config';
+import { useColorMode } from '../ThemeContext';
 
 const ENDPOINT_PREFIX = config.ENDPOINT_PREFIX;
 
@@ -87,6 +88,10 @@ function findClosestMajorTimezone(userTz) {
 }
 
 const SettingsPage = () => {
+  // Theme preference: stored client-side via ThemeContext (localStorage), so
+  // changes apply immediately and are per-device — no Save click required.
+  const { preference, setPreference } = useColorMode();
+
   // Attempt to detect the browser's exact local zone
   // If that fails, default to 'UTC'
   const browserTimeZone = moment.tz.guess() || 'UTC';
@@ -160,6 +165,22 @@ const SettingsPage = () => {
         >
           Settings
         </Typography>
+
+        {/* Appearance — theme preference applies immediately (client-side, no Save) */}
+        <FormControl fullWidth sx={{ mb: 3 }}>
+          <InputLabel id="theme-preference-label">Theme</InputLabel>
+          <Select
+            labelId="theme-preference-label"
+            id="theme-preference-select"
+            label="Theme"
+            value={preference}
+            onChange={(e) => setPreference(e.target.value)}
+          >
+            <MenuItem value="light">Light</MenuItem>
+            <MenuItem value="dark">Dark</MenuItem>
+            <MenuItem value="system">Match System (Auto)</MenuItem>
+          </Select>
+        </FormControl>
 
         {/* Send Reminders */}
         <FormControlLabel
@@ -239,19 +260,22 @@ const SettingsPage = () => {
           endIcon={<SaveIcon />}
           sx={{
             mt: 4,
-            border: '1px solid grey',
-            color: 'grey',
-            backgroundColor: 'white',
+            border: '1px solid',
+            borderColor: 'divider',
+            color: 'text.secondary',
+            backgroundColor: 'background.paper',
             letterSpacing: '0.06em',
             '&:hover': {
-              color: 'white',
-              backgroundColor: 'grey',
-              border: '1px solid grey',
+              color: 'background.paper',
+              backgroundColor: 'text.secondary',
+              border: '1px solid',
+              borderColor: 'text.secondary',
               boxShadow: 'none'
             },
             '&:active': {
-              backgroundColor: 'grey',
-              border: '2px solid grey',
+              backgroundColor: 'text.secondary',
+              border: '2px solid',
+              borderColor: 'text.secondary',
               boxShadow: 'none'
             }
           }}

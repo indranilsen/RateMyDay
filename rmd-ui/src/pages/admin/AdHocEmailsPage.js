@@ -266,19 +266,21 @@ const AdHocEmailsPage = () => {
           mt: '1em',
           mb: 3,
           boxShadow: 'none',
-          border: '1px solid grey',
-          color: 'grey',
-          backgroundColor: 'white',
+          border: '1px solid',
+          borderColor: 'text.secondary',
+          color: 'text.secondary',
+          backgroundColor: 'background.paper',
           letterSpacing: '0.06em',
           '&:hover': {
-            color: 'white',
-            backgroundColor: 'grey',
-            border: '1px solid grey',
+            color: 'background.paper',
+            backgroundColor: 'text.secondary',
+            borderColor: 'text.secondary',
             boxShadow: 'none'
           },
           '&:active': {
-            backgroundColor: 'grey',
-            border: '2px solid grey',
+            backgroundColor: 'text.secondary',
+            borderColor: 'text.secondary',
+            borderWidth: '2px',
             boxShadow: 'none'
           }
         }}
