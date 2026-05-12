@@ -35,20 +35,37 @@ async function seed(db) {
   const aliceId = users.find(u => u.email === 'alice@local.dev').id;
   const bobId = users.find(u => u.email === 'bob@local.dev').id;
 
-  // 4) Alice: 30 consecutive days of ratings ending today
+  // 4) Alice: 13 months of ratings so monthly-average and year-over-year
+  // visualizations actually have data to plot. Realistic patterns:
+  //   - ~10% of days are intentionally skipped (gives streaks a chance to break)
+  //   - Weekends average ~1 point higher than weekdays
+  //   - Slight upward trend over time
   const today = new Date();
-  for (let i = 0; i < 30; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
-    const rating = 4 + Math.floor(Math.random() * 7); // 4..10
-    await db.query(
-      'INSERT INTO ratings (user_id, rating_date, rating, note) VALUES (?, ?, ?, ?)',
-      [aliceId, dateStr, rating, `Seeded rating for ${dateStr}`]
-    );
+  const aliceStart = new Date(today);
+  aliceStart.setDate(aliceStart.getDate() - 395); // ~13 months back
+
+  let dayCursor = new Date(aliceStart);
+  while (dayCursor <= today) {
+    // 90% chance of rating this day (skip otherwise)
+    if (Math.random() < 0.9) {
+      const dateStr = dayCursor.toISOString().split('T')[0];
+      const isWeekend = dayCursor.getDay() === 0 || dayCursor.getDay() === 6;
+      // Days elapsed from start, normalized 0..1 for a gentle upward drift
+      const progress = (dayCursor - aliceStart) / (today - aliceStart);
+      const base = 5 + Math.floor(progress * 2); // 5 -> 7 over the year
+      const weekendBump = isWeekend ? 1 : 0;
+      const jitter = Math.floor(Math.random() * 3) - 1; // -1, 0, +1
+      const rating = Math.max(1, Math.min(10, base + weekendBump + jitter));
+      await db.query(
+        'INSERT INTO ratings (user_id, rating_date, rating, note) VALUES (?, ?, ?, ?)',
+        [aliceId, dateStr, rating, `Seeded rating for ${dateStr}`]
+      );
+    }
+    dayCursor.setDate(dayCursor.getDate() + 1);
   }
 
-  // 5) Bob: 5 sparse ratings over the last 30 days
+  // 5) Bob: 5 sparse ratings over the last 30 days. Useful for confirming
+  // the insights UI doesn't break with very little data.
   const bobOffsets = [2, 7, 15, 22, 28];
   for (const offset of bobOffsets) {
     const d = new Date(today);

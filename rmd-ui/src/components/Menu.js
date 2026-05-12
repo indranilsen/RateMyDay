@@ -1,6 +1,7 @@
 import React from 'react';
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import SettingsIcon from '@mui/icons-material/Settings';
+import InsightsIcon from '@mui/icons-material/Insights';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { IconButton, Box } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
@@ -25,6 +26,10 @@ const Menu = ({ isMobile }) => {
 
   const handleSettings = () => {
     navigate('/settings');
+  };
+
+  const handleInsights = () => {
+    navigate('/insights');
   };
 
   // Check if user is admin
@@ -63,6 +68,9 @@ const Menu = ({ isMobile }) => {
           </IconButton>
         )
       }
+      <IconButton onClick={handleInsights} sx={{ ...iconButtonStyle }} aria-label="insights">
+        <InsightsIcon sx={{ fontSize: '2.5rem' }} />
+      </IconButton>
       <IconButton onClick={handleSettings} sx={{ ...iconButtonStyle }}>
         <SettingsIcon sx={{ fontSize: '2.5rem' }} /> {/* Adjust icon size here */}
       </IconButton>

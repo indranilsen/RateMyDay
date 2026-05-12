@@ -6,6 +6,7 @@ import RegisterPage from './pages/RegisterPage';
 import DayRating from './pages/DayRating';
 import MonthView from './pages/MonthView';
 import YearView from './pages/YearView';
+import InsightsPage from './pages/InsightsPage';
 import SettingsPage from './pages/SettingsPage';
 import AdminLayout from './pages/admin/AdminLayout';
 import SystemStatsPage from './pages/admin/SystemStatsPage';
@@ -43,6 +44,7 @@ const App = () => {
           <Route path="/month-view" element={<MonthView />} />
           <Route path="/year-view/:year" element={<YearView />} />
           <Route path="/year-view" element={<YearView />} />
+          <Route path="/insights" element={<InsightsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Navigate to="stats" replace />} />

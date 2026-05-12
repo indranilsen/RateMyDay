@@ -136,6 +136,133 @@ router.get('/year-data', async (req, res) => {
     }
   });
 
+// Insights endpoint — personal analytics dashboard data
+router.get('/insights', async (req, res) => {
+    const userId = req.session.userId;
+    if (!userId) {
+      return res.status(403).json({ message: 'Not logged in' });
+    }
+
+    try {
+      // 1) Pull every rating for this user — for a daily-rated user we'll
+      // never exceed a few thousand rows in their lifetime. Aggregation is
+      // cheaper to do in JS than to maintain dialect-portable SQL across
+      // MySQL and SQLite.
+      const [rows] = await db.query(
+        'SELECT rating_date, rating FROM ratings WHERE user_id = ? ORDER BY rating_date ASC',
+        [userId]
+      );
+
+      // Normalize to plain `YYYY-MM-DD` strings the same way ratings list
+      // endpoints do — SQLite returns rating_date as a Date via the shim.
+      const ratings = rows.map(r => ({
+        date: r.rating_date.toISOString().split('T')[0],
+        rating: r.rating
+      }));
+
+      // 2) Totals
+      const totalRatings = ratings.length;
+      const averageRating = totalRatings === 0
+        ? 0
+        : ratings.reduce((sum, r) => sum + r.rating, 0) / totalRatings;
+
+      // 3) Streaks — walk consecutive YYYY-MM-DD dates.
+      // "Current" includes today/yesterday so missing today doesn't break it
+      // before the user has had a chance to rate. We compute against the
+      // user's most-recent rating's date when there's nothing newer.
+      let longestStreak = 0;
+      let currentStreak = 0;
+      if (totalRatings > 0) {
+        let runLength = 1;
+        longestStreak = 1;
+        const oneDayMs = 1000 * 60 * 60 * 24;
+        for (let i = 1; i < ratings.length; i++) {
+          const prev = new Date(ratings[i - 1].date);
+          const curr = new Date(ratings[i].date);
+          const gap = Math.round((curr - prev) / oneDayMs);
+          if (gap === 1) {
+            runLength += 1;
+            if (runLength > longestStreak) longestStreak = runLength;
+          } else {
+            runLength = 1;
+          }
+        }
+        // Current streak: count back from today as long as days are present
+        const haveDate = new Set(ratings.map(r => r.date));
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        // If today not rated, we still allow yesterday to be the streak head
+        const startOffset = haveDate.has(today.toISOString().split('T')[0]) ? 0 : 1;
+        let cursor = new Date(today);
+        cursor.setUTCDate(cursor.getUTCDate() - startOffset);
+        let count = 0;
+        while (haveDate.has(cursor.toISOString().split('T')[0])) {
+          count += 1;
+          cursor.setUTCDate(cursor.getUTCDate() - 1);
+        }
+        currentStreak = count;
+      }
+
+      // 4) Day-of-week averages — 0 = Sunday in JS, so we reindex to Mon..Sun
+      // because that's how week views typically read.
+      const dowSums = [0, 0, 0, 0, 0, 0, 0];
+      const dowCounts = [0, 0, 0, 0, 0, 0, 0];
+      for (const r of ratings) {
+        const d = new Date(r.date);
+        // Convert JS Sun=0..Sat=6 -> Mon=0..Sun=6
+        const idx = (d.getUTCDay() + 6) % 7;
+        dowSums[idx] += r.rating;
+        dowCounts[idx] += 1;
+      }
+      const dayOfWeekAverages = dowSums.map((sum, i) => ({
+        day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
+        average: dowCounts[i] === 0 ? null : sum / dowCounts[i],
+        count: dowCounts[i]
+      }));
+
+      // 5) Monthly averages — last 12 months, most-recent first. Even months
+      // with zero ratings get an entry so the chart has a stable 12-bar shape.
+      const monthlyAverages = [];
+      const now = new Date();
+      for (let i = 0; i < 12; i++) {
+        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+        const yyyy = monthStart.getUTCFullYear();
+        const mm = String(monthStart.getUTCMonth() + 1).padStart(2, '0');
+        const prefix = `${yyyy}-${mm}`;
+        const inMonth = ratings.filter(r => r.date.startsWith(prefix));
+        monthlyAverages.push({
+          month: prefix,
+          average: inMonth.length === 0 ? null : inMonth.reduce((s, r) => s + r.rating, 0) / inMonth.length,
+          count: inMonth.length
+        });
+      }
+
+      // 6) Recent trend — last 30 days as {date, rating|null}
+      const recentTrend = [];
+      const haveDate = new Map(ratings.map(r => [r.date, r.rating]));
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setUTCHours(0, 0, 0, 0);
+        d.setUTCDate(d.getUTCDate() - i);
+        const ds = d.toISOString().split('T')[0];
+        recentTrend.push({ date: ds, rating: haveDate.has(ds) ? haveDate.get(ds) : null });
+      }
+
+      res.json({
+        totalRatings,
+        averageRating,
+        currentStreak,
+        longestStreak,
+        dayOfWeekAverages,
+        monthlyAverages,
+        recentTrend
+      });
+    } catch (error) {
+      console.error('Error retrieving insights', error);
+      res.status(500).json({ message: 'Error retrieving insights' });
+    }
+  });
+
 // Available years endpoint
 router.get('/available-years', async (req, res) => {
     const userId = req.session.userId;
