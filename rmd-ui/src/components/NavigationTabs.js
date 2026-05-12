@@ -1,7 +1,7 @@
 import React from 'react';
 import { AppBar, Tabs, Tab, Box, useMediaQuery, useTheme } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import Menu from './Menu'; 
+import Menu from './Menu';
 
 const NavigationTabs = () => {
   const navigate = useNavigate();

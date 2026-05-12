@@ -136,6 +136,60 @@ router.get('/year-data', async (req, res) => {
     }
   });
 
+// Streak endpoint — cheap, returns just current + longest. Used by the
+// nav-bar StreakBadge so we don't pay the full insights computation on
+// every page change.
+router.get('/streak', async (req, res) => {
+    const userId = req.session.userId;
+    if (!userId) {
+      return res.status(403).json({ message: 'Not logged in' });
+    }
+    try {
+      const [rows] = await db.query(
+        'SELECT rating_date FROM ratings WHERE user_id = ? ORDER BY rating_date ASC',
+        [userId]
+      );
+      if (rows.length === 0) {
+        return res.json({ current: 0, longest: 0 });
+      }
+      const dates = rows.map(r => r.rating_date.toISOString().split('T')[0]);
+      const oneDayMs = 1000 * 60 * 60 * 24;
+
+      // Longest historical run of consecutive days
+      let longest = 1;
+      let run = 1;
+      for (let i = 1; i < dates.length; i++) {
+        const gap = Math.round((new Date(dates[i]) - new Date(dates[i - 1])) / oneDayMs);
+        if (gap === 1) {
+          run += 1;
+          if (run > longest) longest = run;
+        } else {
+          run = 1;
+        }
+      }
+
+      // Current — count back from today (or yesterday if today not rated yet
+      // so we don't break the user's streak before they've had a chance to rate)
+      const haveDate = new Set(dates);
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      const todayStr = today.toISOString().split('T')[0];
+      const startOffset = haveDate.has(todayStr) ? 0 : 1;
+      let cursor = new Date(today);
+      cursor.setUTCDate(cursor.getUTCDate() - startOffset);
+      let current = 0;
+      while (haveDate.has(cursor.toISOString().split('T')[0])) {
+        current += 1;
+        cursor.setUTCDate(cursor.getUTCDate() - 1);
+      }
+
+      res.json({ current, longest });
+    } catch (err) {
+      console.error('Error computing streak', err);
+      res.status(500).json({ message: 'Error computing streak' });
+    }
+  });
+
 // Insights endpoint — personal analytics dashboard data
 router.get('/insights', async (req, res) => {
     const userId = req.session.userId;
