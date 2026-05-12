@@ -18,8 +18,15 @@ const TABS = [
 // the default MUI blue. Scoped to the admin subtree via ThemeProvider — the
 // rest of the app keeps its existing palette. `error` is pinned to the
 // rating-1 red so destructive buttons match the day-rating palette.
-const adminTheme = createTheme({
+//
+// Built as a function so MUI passes us the outer theme — we MERGE on top of
+// it (preserving mode, background, text, and the global MuiPaper overrides
+// from ThemeContext) and only swap the brand colors. Building a fresh
+// createTheme() here would silently reset dark mode back to light.
+const makeAdminTheme = (outer) => createTheme({
+  ...outer,
   palette: {
+    ...outer.palette,
     primary: {
       main: '#787878',
       light: '#a0a0a0',
@@ -55,7 +62,7 @@ const AdminLayout = () => {
   };
 
   return (
-    <ThemeProvider theme={adminTheme}>
+    <ThemeProvider theme={makeAdminTheme}>
       <Box sx={{ p: 2 }}>
         <Paper elevation={0} sx={{ p: 2, maxWidth: '900px', margin: 'auto' }}>
           <Typography
@@ -80,7 +87,8 @@ const AdminLayout = () => {
             allowScrollButtonsMobile
             sx={{
               mb: 3,
-              borderBottom: '1px solid #eee'
+              borderBottom: '1px solid',
+              borderColor: 'divider'
             }}
           >
             {TABS.map((t) => (

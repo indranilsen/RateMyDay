@@ -203,8 +203,9 @@ const ManageUsersPage = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 1,
-            border: '1px solid #ddd',
-            backgroundColor: '#fafafa'
+            border: '1px solid',
+            borderColor: 'divider',
+            backgroundColor: 'action.hover'
           }}
         >
           <Typography variant="body2" sx={{ flexGrow: 1, color: 'grey', letterSpacing: '0.04em' }}>
@@ -256,7 +257,7 @@ const ManageUsersPage = () => {
         )}
       </Box>
 
-      <List sx={{ border: '1px solid #eee', borderRadius: 1, p: 0 }}>
+      <List sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 0 }}>
         {users.map((u, i) => (
           <ListItem key={u.id} disablePadding divider={i < users.length - 1}>
             <Checkbox

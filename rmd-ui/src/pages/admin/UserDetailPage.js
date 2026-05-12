@@ -131,7 +131,7 @@ const UserDetailPage = () => {
         variant="h4"
         sx={{
           fontWeight: '100',
-          color: '#505050',
+          color: 'text.primary',
           letterSpacing: '0.04em',
           mb: 0.5
         }}

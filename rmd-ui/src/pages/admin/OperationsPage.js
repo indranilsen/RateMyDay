@@ -226,7 +226,7 @@ const OperationsPage = () => {
         <Tabs
           value={logType}
           onChange={(e, v) => setLogType(v)}
-          sx={{ mb: 1, borderBottom: '1px solid #eee', minHeight: '36px' }}
+          sx={{ mb: 1, borderBottom: '1px solid', borderColor: 'divider', minHeight: '36px' }}
         >
           <Tab value="out" label="stdout" sx={{ fontSize: '0.8rem', minHeight: '36px' }} />
           <Tab value="err" label="stderr" sx={{ fontSize: '0.8rem', minHeight: '36px' }} />
@@ -236,15 +236,16 @@ const OperationsPage = () => {
           sx={{
             m: 0,
             p: 1.5,
-            backgroundColor: '#fafafa',
-            border: '1px solid #eee',
+            backgroundColor: 'action.hover',
+            border: '1px solid',
+            borderColor: 'divider',
             borderRadius: 1,
             maxHeight: '480px',
             overflow: 'auto',
             fontFamily: 'Menlo, Monaco, "Courier New", monospace',
             fontSize: '12px',
             lineHeight: '1.4',
-            color: '#404040',
+            color: 'text.primary',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-all'
           }}

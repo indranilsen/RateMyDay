@@ -182,13 +182,39 @@ const SettingsPage = () => {
           </Select>
         </FormControl>
 
-        {/* Send Reminders */}
+        {/* Send Reminders — muted grey palette to match the rest of the nav/
+            buttons. MUI's default Switch is blue (theme.palette.primary), which
+            clashes with the day-rating app's restrained palette in both modes. */}
         <FormControlLabel
           control={
             <Switch
               checked={settings.sendReminders}
               onChange={(e) => handleChange('sendReminders', e.target.checked)}
-              color="primary"
+              sx={(theme) => {
+                // Override BOTH off + on states (not just on) — MUI's default
+                // unchecked thumb in dark mode is already near-white, so
+                // brightening only the ON thumb left the two states looking
+                // identical. We drive OFF down to a dim thumb on a very-dim
+                // track, and ON to a bright thumb on a medium-grey track.
+                const isDark = theme.palette.mode === 'dark';
+                return {
+                  '& .MuiSwitch-switchBase': {
+                    color: isDark ? theme.palette.grey[700] : theme.palette.grey[400]
+                  },
+                  '& .MuiSwitch-switchBase + .MuiSwitch-track': {
+                    backgroundColor: isDark ? theme.palette.grey[900] : theme.palette.grey[400],
+                    opacity: 1
+                  },
+                  '& .MuiSwitch-switchBase.Mui-checked': {
+                    color: isDark ? theme.palette.grey[100] : theme.palette.grey[800],
+                    '&:hover': { backgroundColor: theme.palette.action.hover }
+                  },
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                    backgroundColor: isDark ? theme.palette.grey[500] : theme.palette.grey[600],
+                    opacity: 0.9
+                  }
+                };
+              }}
             />
           }
           label="Send Reminders"

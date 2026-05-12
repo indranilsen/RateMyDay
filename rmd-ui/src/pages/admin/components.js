@@ -38,7 +38,7 @@ export const StatCard = ({ label, value, caption, accent }) => (
     >
       {label}
     </Typography>
-    <Typography variant="h6" sx={{ fontWeight: '200', color: '#505050', wordBreak: 'break-word' }}>
+    <Typography variant="h6" sx={{ fontWeight: '200', color: 'text.primary', wordBreak: 'break-word' }}>
       {value}
     </Typography>
     {caption && (
@@ -79,7 +79,7 @@ export const StackedBar = ({ segments, height = 10 }) => {
           height,
           borderRadius: 1,
           overflow: 'hidden',
-          backgroundColor: '#eee'
+          backgroundColor: 'action.hover'
         }}
       >
         {total === 0 ? null : segments.map((s, i) => {
@@ -135,7 +135,7 @@ export const MetricBar = ({ label, percent, caption, color }) => (
       sx={{
         height: 8,
         borderRadius: 1,
-        backgroundColor: '#eee',
+        backgroundColor: 'action.hover',
         '& .MuiLinearProgress-bar': {
           backgroundColor: color || '#787878'
         }
