@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { createTheme, ThemeProvider as MuiThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
@@ -96,17 +96,20 @@ export const ThemeProvider = ({ children }) => {
   // Effective mode: explicit preference wins; otherwise mirror the OS
   const mode = preference === 'system' ? systemMode : preference;
 
-  const setPreference = (next) => {
+  const setPreference = useCallback((next) => {
     if (isValidPreference(next)) setPreferenceState(next);
-  };
+  }, []);
 
   // Quick toggle: flip the effective mode. If we were on 'system', this
   // forces light or dark (locks it). User can return to 'system' via Settings.
-  const toggle = () => {
+  const toggle = useCallback(() => {
     setPreferenceState(mode === 'light' ? 'dark' : 'light');
-  };
+  }, [mode]);
 
-  const value = useMemo(() => ({ mode, preference, toggle, setPreference }), [mode, preference]);
+  const value = useMemo(
+    () => ({ mode, preference, toggle, setPreference }),
+    [mode, preference, toggle, setPreference]
+  );
   const muiTheme = useMemo(() => buildTheme(mode), [mode]);
 
   return (
