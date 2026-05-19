@@ -4,6 +4,12 @@ const nodemailer = require('nodemailer');
 const moment = require('moment-timezone');
 const { db, listReminderCandidates, listMonthlyRecapCandidates } = require('./db');
 const { sendEmail } = require('./services/emailService');
+const {
+  REMINDER_PALETTE,
+  priorMonthInTz,
+  computeMonthlyStats,
+  buildMonthlyRecapEmail
+} = require('./services/monthlyRecap');
 
 const {
   DISABLE_REMINDERS = 'false',
@@ -223,14 +229,6 @@ async function updateLastReminderSent(userId, dateString) {
   }
 }
 
-// Inlined 10-step rating palette so the email is self-contained — email
-// clients won't import a JS module, so we duplicate the values from
-// RatingColor.js here.
-const REMINDER_PALETTE = {
-  1:  '#ff3e36', 2:  '#ff643c', 3:  '#ff7c42', 4:  '#ff9746', 5:  '#ffb44b',
-  6:  '#ffd24f', 7:  '#ddde55', 8:  '#b0d85a', 9:  '#85d15f', 10: '#5eca64'
-};
-
 // Build a one-click rating row as a table — most email clients hate flex
 // but render tables reliably. Each cell links to /rate?date=...&value=N
 // which the SPA's RateRedirect picks up and submits.
@@ -314,7 +312,7 @@ async function runMonthlyRecapPass() {
 
     let stats;
     try {
-      stats = await getMonthlyStats(row.userId, priorMonthMoment);
+      stats = await computeMonthlyStats(row.userId, priorMonthMoment);
     } catch (err) {
       console.error('[Recap] Failed to compute stats for user', row.userId, err);
       return;
@@ -329,80 +327,10 @@ async function runMonthlyRecapPass() {
   }));
 }
 
-// Single query for the month's ratings + JS-side reduction. Cheaper than
-// many small aggregates and easier to extend (top day, bottom day, dist).
-async function getMonthlyStats(userId, monthMoment) {
-  const start = monthMoment.clone().startOf('month').format('YYYY-MM-DD');
-  const end = monthMoment.clone().endOf('month').format('YYYY-MM-DD');
-  const daysInMonth = monthMoment.daysInMonth();
-
-  const [rows] = await db.query(
-    `SELECT rating_date, rating
-       FROM ratings
-       WHERE user_id = ?
-         AND rating_date BETWEEN ? AND ?`,
-    [userId, start, end]
-  );
-
-  // Normalize rating_date — mysql2 returns Date objects, sqlite returns strings
-  const normalized = rows.map(r => ({
-    date: r.rating_date instanceof Date
-      ? r.rating_date.toISOString().split('T')[0]
-      : String(r.rating_date).split('T')[0],
-    rating: Number(r.rating)
-  }));
-
-  const daysRated = normalized.length;
-  const sum = normalized.reduce((s, r) => s + r.rating, 0);
-  const average = daysRated > 0 ? sum / daysRated : 0;
-
-  // Top/bottom day. Tie-break top by latest date (most recent peak), bottom
-  // by earliest date (so we don't dredge up a recent rough day if there was
-  // an earlier matching one — slight kindness bias).
-  let topDay = null;
-  let bottomDay = null;
-  for (const r of normalized) {
-    if (!topDay || r.rating > topDay.rating || (r.rating === topDay.rating && r.date > topDay.date)) {
-      topDay = r;
-    }
-    if (!bottomDay || r.rating < bottomDay.rating || (r.rating === bottomDay.rating && r.date < bottomDay.date)) {
-      bottomDay = r;
-    }
-  }
-
-  // 1..10 distribution for the mini histogram in the email
-  const distribution = Array.from({ length: 10 }, () => 0);
-  for (const r of normalized) {
-    if (r.rating >= 1 && r.rating <= 10) distribution[r.rating - 1] += 1;
-  }
-
-  return { daysRated, daysInMonth, average, topDay, bottomDay, distribution };
-}
-
 async function sendMonthlyRecap(recipientEmail, userId, monthMoment, stats) {
-  const monthName = monthMoment.format('MMMM');
-  const year = monthMoment.format('YYYY');
-  const subject = `Your ${monthName} on RateMyDay`;
-  const appLink = 'https://apps.indranilsen.com/rate-my-day';
-
-  const textLines = [
-    `Your ${monthName} ${year} on RateMyDay:`,
-    `  Average: ${stats.average.toFixed(1)}`,
-    `  Days rated: ${stats.daysRated} of ${stats.daysInMonth}`,
-  ];
-  if (stats.topDay) textLines.push(`  Top day: ${stats.topDay.date} (${stats.topDay.rating})`);
-  if (stats.bottomDay) textLines.push(`  Toughest day: ${stats.bottomDay.date} (${stats.bottomDay.rating})`);
-  textLines.push('', `Open RateMyDay: ${appLink}/insights`);
-
-  const html = getMonthlyRecapHtml(monthName, year, stats, appLink);
-
+  const { subject, text, html } = buildMonthlyRecapEmail(monthMoment, stats);
   try {
-    await sendEmail({
-      to: recipientEmail,
-      subject,
-      text: textLines.join('\n'),
-      html
-    });
+    await sendEmail({ to: recipientEmail, subject, text, html });
     console.log(`[Recap] Email sent to ${recipientEmail} (user: ${userId}) for ${monthMoment.format('YYYY-MM')}`);
   } catch (err) {
     console.error('[Recap] Failed to send email to', recipientEmail, err);
@@ -420,179 +348,6 @@ async function updateLastRecapSent(userId, yearMonth) {
   } catch (err) {
     console.error('[Recap] Failed to update lastRecapSent for user', userId, err);
   }
-}
-
-// Mini histogram row — 10 vertical bars colored by the rating palette. Heights
-// scaled relative to the month's max bucket so a single dominant rating still
-// shows the other ratings as visible slivers. Inline styles only — Gmail/etc
-// drop <style> blocks.
-function buildDistributionHtml(distribution) {
-  const max = Math.max(1, ...distribution);
-  const maxBarHeight = 60; // px
-  const cells = distribution.map((count, i) => {
-    const rating = i + 1;
-    const height = Math.round((count / max) * maxBarHeight);
-    const bg = REMINDER_PALETTE[rating];
-    return `
-      <td style="vertical-align: bottom; padding: 0 3px; text-align: center;">
-        <div style="
-          width: 22px;
-          height: ${height}px;
-          background-color: ${bg};
-          border-radius: 2px;
-          margin: 0 auto;
-        "></div>
-        <div style="font-size: 10px; color: #a0a0a0; margin-top: 4px;">${rating}</div>
-      </td>`;
-  }).join('');
-
-  return `
-    <table style="margin: 0 auto; border-collapse: collapse;">
-      <tr style="height: ${maxBarHeight}px;">${cells}</tr>
-    </table>
-    <p style="text-align: center; margin: 8px 0 0 0; color: #a0a0a0; font-size: 11px; letter-spacing: 0.06em;">
-      RATINGS THIS MONTH
-    </p>
-  `;
-}
-
-function getMonthlyRecapHtml(monthName, year, stats, appLink) {
-  const avgStr = stats.average.toFixed(1);
-  const avgColor = REMINDER_PALETTE[Math.max(1, Math.min(10, Math.round(stats.average)))];
-
-  const topDayBlock = stats.topDay ? `
-    <tr>
-      <td style="padding: 8px 0; color: #808080; font-size: 14px;">Top day</td>
-      <td style="padding: 8px 0; text-align: right; color: #404040; font-size: 14px;">
-        ${stats.topDay.date}
-        <span style="
-          display: inline-block;
-          width: 22px;
-          height: 22px;
-          line-height: 22px;
-          margin-left: 8px;
-          background-color: ${REMINDER_PALETTE[stats.topDay.rating]};
-          color: #ffffff;
-          border-radius: 3px;
-          font-size: 12px;
-          font-weight: 500;
-          text-align: center;
-          vertical-align: middle;
-        ">${stats.topDay.rating}</span>
-      </td>
-    </tr>` : '';
-
-  const bottomDayBlock = stats.bottomDay && (!stats.topDay || stats.bottomDay.date !== stats.topDay.date) ? `
-    <tr>
-      <td style="padding: 8px 0; color: #808080; font-size: 14px;">Toughest day</td>
-      <td style="padding: 8px 0; text-align: right; color: #404040; font-size: 14px;">
-        ${stats.bottomDay.date}
-        <span style="
-          display: inline-block;
-          width: 22px;
-          height: 22px;
-          line-height: 22px;
-          margin-left: 8px;
-          background-color: ${REMINDER_PALETTE[stats.bottomDay.rating]};
-          color: #ffffff;
-          border-radius: 3px;
-          font-size: 12px;
-          font-weight: 500;
-          text-align: center;
-          vertical-align: middle;
-        ">${stats.bottomDay.rating}</span>
-      </td>
-    </tr>` : '';
-
-  return `
-  <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Your ${monthName} on RateMyDay</title>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400&display=swap" rel="stylesheet" />
-</head>
-<body style="margin: 0; padding: 0; background-color: #f7f7f7; font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;">
-<div style="
-    max-width: 600px;
-    margin: 40px auto;
-    background-color: #ffffff;
-    border-radius: 8px;
-    padding: 24px;
-    border: 1px solid #ddd;
-    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
-  ">
-    <p style="text-align: center; margin: 0 0 4px 0; color: #a0a0a0; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;">
-      Your monthly recap
-    </p>
-    <h2 style="
-      text-align: center;
-      color: #505050;
-      margin: 0 0 24px 0;
-      font-weight: 200;
-      font-size: 26px;
-      letter-spacing: 0.04em;
-    ">
-        ${monthName} <span style="color: #a0a0a0; font-weight: 100;">${year}</span>
-    </h2>
-
-    <div style="text-align: center; margin: 24px 0;">
-      <div style="
-        display: inline-block;
-        width: 96px;
-        height: 96px;
-        line-height: 96px;
-        background-color: ${avgColor};
-        color: #ffffff;
-        font-size: 36px;
-        font-weight: 300;
-        border-radius: 50%;
-      ">${avgStr}</div>
-      <p style="margin: 8px 0 0 0; color: #808080; font-size: 13px; letter-spacing: 0.06em;">
-        AVERAGE RATING
-      </p>
-    </div>
-
-    <table style="width: 100%; border-collapse: collapse; margin: 24px 0;">
-      <tr>
-        <td style="padding: 8px 0; color: #808080; font-size: 14px;">Days rated</td>
-        <td style="padding: 8px 0; text-align: right; color: #404040; font-size: 14px;">
-          ${stats.daysRated} <span style="color: #a0a0a0;">/ ${stats.daysInMonth}</span>
-        </td>
-      </tr>
-      ${topDayBlock}
-      ${bottomDayBlock}
-    </table>
-
-    <div style="margin: 32px 0 8px 0;">
-      ${buildDistributionHtml(stats.distribution)}
-    </div>
-
-    <div style="text-align: center; margin: 32px 0 8px 0;">
-        <a href="${appLink}/insights" style="
-        display: inline-block;
-        border: 1px solid #2477C8FF;
-        color: #2477C8FF;
-        padding: 12px 24px;
-        border-radius: 4px;
-        font-size: 16px;
-        font-weight: 300;
-        letter-spacing: 0.05em;
-        background-color: transparent;
-        box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
-        text-decoration: none;
-      ">
-            See full insights
-        </a>
-    </div>
-    <p style="text-align: center; margin: 16px 0 0 0; color: #a0a0a0; font-size: 11px;">
-      You can turn off the monthly recap in Settings.
-    </p>
-</div>
-</body>
-</html>
-  `;
 }
 
 function getReminderEmailHtml(cadence, missedDays, appLink, targetDate) {

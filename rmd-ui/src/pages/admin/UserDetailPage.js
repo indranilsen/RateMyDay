@@ -12,9 +12,11 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
 
 import config from '../../Config';
 import DeleteUserDialog from './DeleteUserDialog';
+import SendRecapDialog from './SendRecapDialog';
 import { StatCard } from './components';
 import DayRatingColors from '../../RatingColor';
 
@@ -54,7 +56,10 @@ const UserDetailPage = () => {
   const [error, setError] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [recapOpen, setRecapOpen] = useState(false);
+  const [recapBusy, setRecapBusy] = useState(false);
   const [errorSnack, setErrorSnack] = useState('');
+  const [flash, setFlash] = useState('');
 
   const loadUser = useCallback(async () => {
     setLoading(true);
@@ -77,6 +82,38 @@ const UserDetailPage = () => {
   useEffect(() => {
     loadUser();
   }, [loadUser]);
+
+  const handleSendRecap = async () => {
+    if (!user) return;
+    setRecapBusy(true);
+    try {
+      const response = await axios.post(
+        `${ENDPOINT_PREFIX}/api/admin/users/${user.id}/send-recap`,
+        {},
+        { withCredentials: true }
+      );
+      const { sent, skipped } = response.data;
+      if (sent === 1) {
+        setFlash(`Recap sent to ${user.email}.`);
+      } else {
+        const reason = skipped && skipped[0] ? skipped[0].reason : 'unknown';
+        const friendly = reason === 'no_ratings'
+          ? 'no ratings in the prior month'
+          : reason === 'no_email'
+            ? 'user has no email on file'
+            : reason;
+        setErrorSnack(`Recap not sent — ${friendly}.`);
+      }
+      setRecapOpen(false);
+    } catch (err) {
+      console.error('Error sending recap', err);
+      const message = (err.response && err.response.data && err.response.data.message) || 'Failed to send recap.';
+      setErrorSnack(message);
+      setRecapOpen(false);
+    } finally {
+      setRecapBusy(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!user) return;
@@ -168,14 +205,24 @@ const UserDetailPage = () => {
         </Grid>
       </Grid>
 
-      <Button
-        variant="outlined"
-        color="error"
-        startIcon={<DeleteIcon />}
-        onClick={() => setDialogOpen(true)}
-      >
-        Delete User
-      </Button>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Button
+          variant="outlined"
+          startIcon={<InsightsOutlinedIcon />}
+          onClick={() => setRecapOpen(true)}
+          sx={{ color: 'grey', borderColor: 'grey' }}
+        >
+          Send Monthly Recap
+        </Button>
+        <Button
+          variant="outlined"
+          color="error"
+          startIcon={<DeleteIcon />}
+          onClick={() => setDialogOpen(true)}
+        >
+          Delete User
+        </Button>
+      </Box>
 
       <DeleteUserDialog
         open={dialogOpen}
@@ -184,6 +231,25 @@ const UserDetailPage = () => {
         onConfirm={handleDelete}
         busy={deleting}
       />
+
+      <SendRecapDialog
+        open={recapOpen}
+        user={user}
+        onClose={() => setRecapOpen(false)}
+        onConfirm={handleSendRecap}
+        busy={recapBusy}
+      />
+
+      <Snackbar
+        open={Boolean(flash)}
+        autoHideDuration={4000}
+        onClose={() => setFlash('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="success" onClose={() => setFlash('')}>
+          {flash}
+        </Alert>
+      </Snackbar>
 
       <Snackbar
         open={Boolean(errorSnack)}

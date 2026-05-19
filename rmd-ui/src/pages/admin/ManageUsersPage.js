@@ -18,9 +18,11 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
 
 import config from '../../Config';
 import BulkDeleteDialog from './BulkDeleteDialog';
+import SendRecapDialog from './SendRecapDialog';
 
 const ENDPOINT_PREFIX = config.ENDPOINT_PREFIX;
 const PAGE_SIZE = 10;
@@ -47,9 +49,15 @@ const ManageUsersPage = () => {
   // Bulk action dialog state
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkRecapOpen, setBulkRecapOpen] = useState(false);
+  const [bulkRecapBusy, setBulkRecapBusy] = useState(false);
 
-  // Flash message passed via navigation state (e.g. "Deleted alice@local.dev")
+  // Flash message passed via navigation state (e.g. "Deleted alice@local.dev").
+  // Two channels so failures don't render in the green success Alert:
+  //   flash      -> success Snackbar
+  //   errorFlash -> error Snackbar
   const [flash, setFlash] = useState(location.state && location.state.flash ? location.state.flash : '');
+  const [errorFlash, setErrorFlash] = useState('');
   useEffect(() => {
     // Clear the flash from history so it doesn't reappear on refresh / back-nav
     if (location.state && location.state.flash) {
@@ -151,6 +159,30 @@ const ManageUsersPage = () => {
     navigate('/admin/emails', { state: { prefillEmails: selectedEmails } });
   };
 
+  const handleBulkRecap = async () => {
+    setBulkRecapBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const response = await axios.post(
+        `${ENDPOINT_PREFIX}/api/admin/users/bulk-send-recap`,
+        { userIds: ids },
+        { withCredentials: true }
+      );
+      const { sent, skipped } = response.data;
+      const msg = skipped && skipped.length > 0
+        ? `Sent recap to ${sent}. Skipped ${skipped.length} (no ratings / no email).`
+        : `Sent recap to ${sent}.`;
+      setFlash(msg);
+      setBulkRecapOpen(false);
+    } catch (err) {
+      console.error('Error during bulk recap', err);
+      setErrorFlash('Bulk recap send failed.');
+      setBulkRecapOpen(false);
+    } finally {
+      setBulkRecapBusy(false);
+    }
+  };
+
   const handleBulkDelete = async () => {
     setBulkBusy(true);
     try {
@@ -171,7 +203,7 @@ const ManageUsersPage = () => {
       fetchPage(0, searchTerm, true);
     } catch (err) {
       console.error('Error during bulk delete', err);
-      setFlash('Bulk delete failed.');
+      setErrorFlash('Bulk delete failed.');
       setBulkDeleteOpen(false);
     } finally {
       setBulkBusy(false);
@@ -218,6 +250,14 @@ const ManageUsersPage = () => {
             sx={{ color: 'grey' }}
           >
             Email
+          </Button>
+          <Button
+            size="small"
+            startIcon={<InsightsOutlinedIcon />}
+            onClick={() => setBulkRecapOpen(true)}
+            sx={{ color: 'grey' }}
+          >
+            Recap
           </Button>
           <Button
             size="small"
@@ -311,6 +351,14 @@ const ManageUsersPage = () => {
         busy={bulkBusy}
       />
 
+      <SendRecapDialog
+        open={bulkRecapOpen}
+        count={selectionCount}
+        onClose={() => setBulkRecapOpen(false)}
+        onConfirm={handleBulkRecap}
+        busy={bulkRecapBusy}
+      />
+
       <Snackbar
         open={Boolean(flash)}
         autoHideDuration={4000}
@@ -319,6 +367,17 @@ const ManageUsersPage = () => {
       >
         <Alert severity="success" onClose={() => setFlash('')}>
           {flash}
+        </Alert>
+      </Snackbar>
+
+      <Snackbar
+        open={Boolean(errorFlash)}
+        autoHideDuration={5000}
+        onClose={() => setErrorFlash('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="error" onClose={() => setErrorFlash('')}>
+          {errorFlash}
         </Alert>
       </Snackbar>
     </Box>

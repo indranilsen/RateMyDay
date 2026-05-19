@@ -9,6 +9,7 @@ const sanitizeHtml = require('sanitize-html');
 const router = express.Router();
 const { db, getPoolStats } = require('../db');
 const { sendEmail } = require('../services/emailService');
+const { sendRecapForUser } = require('../services/monthlyRecap');
 const requestStats = require('../request-stats');
 
 const execFileAsync = promisify(execFile);
@@ -240,6 +241,107 @@ router.post('/users/bulk-delete', async (req, res) => {
 
   console.log(`[Admin] bulk-delete by admin id=${req.session.userId}: deleted=${deleted} skipped=${skipped.length}`);
   res.json({ deleted, skipped });
+});
+
+/**
+ * Pull email + localTimezone for a single user. Used by the recap endpoints
+ * to anchor "prior month" in the user's timezone, matching the cron behavior.
+ * Returns null if the user doesn't exist. localTimezone falls back to UTC if
+ * the user never visited Settings.
+ */
+async function loadUserForRecap(userId) {
+  const [rows] = await db.query(
+    `SELECT u.id, u.email, s.data
+       FROM users u
+       LEFT JOIN settings s ON s.user_id = u.id
+       WHERE u.id = ?`,
+    [userId]
+  );
+  if (!rows.length) return null;
+  const row = rows[0];
+  let tz = 'UTC';
+  if (row.data) {
+    try {
+      const parsed = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+      if (parsed && typeof parsed.localTimezone === 'string') tz = parsed.localTimezone;
+    } catch (err) {
+      // Bad settings JSON — fall back to UTC rather than failing the send
+    }
+  }
+  return { id: row.id, email: row.email, localTimezone: tz };
+}
+
+/**
+ * POST /api/admin/users/:id/send-recap
+ * Ad-hoc admin trigger for the monthly recap email — does NOT check the
+ * sendMonthlyRecap opt-in (admin is explicitly choosing to send). Computes
+ * stats for the prior month in the user's local timezone. Skips if the user
+ * has no email or no ratings in that window.
+ */
+router.post('/users/:id/send-recap', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ message: 'Invalid user id' });
+  }
+  try {
+    const u = await loadUserForRecap(id);
+    if (!u) return res.status(404).json({ message: 'User not found' });
+
+    const result = await sendRecapForUser({ userId: u.id, email: u.email, localTimezone: u.localTimezone });
+    if (result.sent) {
+      console.log(`[Admin] Ad-hoc recap sent to ${u.email} (id=${id}, month=${result.month}) by admin id=${req.session.userId}`);
+      return res.json({ sent: 1, skipped: [] });
+    }
+    return res.json({ sent: 0, skipped: [{ id, reason: result.reason }] });
+  } catch (err) {
+    console.error('[Admin] send-recap failed', err);
+    res.status(500).json({ message: 'Error sending recap' });
+  }
+});
+
+/**
+ * POST /api/admin/users/bulk-send-recap
+ * Body: { userIds: number[] }
+ * Same shape as bulk-delete: returns { sent, skipped: [{id, reason}] }.
+ * Skips: no email, no ratings in prior month, not found, error.
+ */
+router.post('/users/bulk-send-recap', async (req, res) => {
+  const { userIds } = req.body || {};
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    return res.status(400).json({ message: 'userIds[] required' });
+  }
+  if (userIds.length > 1000) {
+    return res.status(400).json({ message: 'Too many ids (max 1000)' });
+  }
+
+  const skipped = [];
+  let sent = 0;
+  for (const rawId of userIds) {
+    const id = parseInt(rawId, 10);
+    if (!Number.isFinite(id)) {
+      skipped.push({ id: rawId, reason: 'invalid_id' });
+      continue;
+    }
+    try {
+      const u = await loadUserForRecap(id);
+      if (!u) {
+        skipped.push({ id, reason: 'not_found' });
+        continue;
+      }
+      const result = await sendRecapForUser({ userId: u.id, email: u.email, localTimezone: u.localTimezone });
+      if (result.sent) {
+        sent += 1;
+      } else {
+        skipped.push({ id, reason: result.reason });
+      }
+    } catch (err) {
+      console.error(`[Admin] bulk-send-recap failed for id=${id}`, err);
+      skipped.push({ id, reason: 'error' });
+    }
+  }
+
+  console.log(`[Admin] bulk-send-recap by admin id=${req.session.userId}: sent=${sent} skipped=${skipped.length}`);
+  res.json({ sent, skipped });
 });
 
 /**
