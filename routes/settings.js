@@ -43,6 +43,13 @@ const validateSettings = (body) => {
       validated.reminderCadence = body.reminderCadence;
     }
   }
+  if ('sendMonthlyRecap' in body) {
+    if (typeof body.sendMonthlyRecap !== 'boolean') {
+      errors.push('sendMonthlyRecap must be a boolean');
+    } else {
+      validated.sendMonthlyRecap = body.sendMonthlyRecap;
+    }
+  }
 
   return { validated, errors };
 };

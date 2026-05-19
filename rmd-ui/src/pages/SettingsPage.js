@@ -103,7 +103,8 @@ const SettingsPage = () => {
     sendReminders: false,
     reminderCadence: 'daily',
     reminderTime: '20:00',
-    localTimezone: defaultTimeZone
+    localTimezone: defaultTimeZone,
+    sendMonthlyRecap: false
   });
 
   const [loading, setLoading] = useState(true);
@@ -278,6 +279,43 @@ const SettingsPage = () => {
             </FormControl>
           </Grid>
         </Grid>
+
+        {/* Monthly recap — separate opt-in. Independent of daily/weekly
+            reminders so users can want one without the other. Lands on the
+            1st of each month at their existing reminder time. */}
+        <FormControlLabel
+          sx={{ display: 'block', mt: 3, color: 'grey' }}
+          control={
+            <Switch
+              checked={settings.sendMonthlyRecap}
+              onChange={(e) => handleChange('sendMonthlyRecap', e.target.checked)}
+              sx={(theme) => {
+                const isDark = theme.palette.mode === 'dark';
+                return {
+                  '& .MuiSwitch-switchBase': {
+                    color: isDark ? theme.palette.grey[700] : theme.palette.grey[400]
+                  },
+                  '& .MuiSwitch-switchBase + .MuiSwitch-track': {
+                    backgroundColor: isDark ? theme.palette.grey[900] : theme.palette.grey[400],
+                    opacity: 1
+                  },
+                  '& .MuiSwitch-switchBase.Mui-checked': {
+                    color: isDark ? theme.palette.grey[100] : theme.palette.grey[800],
+                    '&:hover': { backgroundColor: theme.palette.action.hover }
+                  },
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                    backgroundColor: isDark ? theme.palette.grey[500] : theme.palette.grey[600],
+                    opacity: 0.9
+                  }
+                };
+              }}
+            />
+          }
+          label="Send Monthly Recap"
+        />
+        <Typography variant="caption" sx={{ display: 'block', color: 'grey', mt: 0.5, ml: 5 }}>
+          Sent on the 1st with last month's average, days rated, and highlights.
+        </Typography>
 
         {/* Save Button */}
         <Button

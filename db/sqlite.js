@@ -110,6 +110,18 @@ function getPoolStats() {
   return null;
 }
 
+// Dialect-specific helper — SQLite stores booleans as 0/1
+async function listMonthlyRecapCandidates() {
+  const [rows] = await query(`
+    SELECT u.id AS userId, u.email, s.data
+    FROM users u
+           JOIN settings s ON u.id = s.user_id
+    WHERE json_extract(s.data, '$.sendMonthlyRecap') = 1
+       OR json_extract(s.data, '$.sendMonthlyRecap') = 'true';
+  `);
+  return rows;
+}
+
 module.exports = {
   db,
   sessionStore,
@@ -117,5 +129,6 @@ module.exports = {
   close,
   getAvailableYears,
   listReminderCandidates,
+  listMonthlyRecapCandidates,
   getPoolStats
 };

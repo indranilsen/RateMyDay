@@ -82,6 +82,20 @@ async function listReminderCandidates() {
   return rows;
 }
 
+// Dialect-specific helper — selects users opted into the monthly recap.
+// Mirrors listReminderCandidates but on a separate flag so users can want
+// the recap without nightly reminders (or vice versa).
+async function listMonthlyRecapCandidates() {
+  const [rows] = await promisePool.query(`
+    SELECT u.id AS userId, u.email, s.data
+    FROM users u
+           JOIN settings s ON u.id = s.user_id
+    WHERE JSON_EXTRACT(s.data, '$.sendMonthlyRecap') = true
+       OR JSON_UNQUOTE(JSON_EXTRACT(s.data, '$.sendMonthlyRecap')) = 'true';
+  `);
+  return rows;
+}
+
 module.exports = {
   db: promisePool,
   sessionStore,
@@ -89,5 +103,6 @@ module.exports = {
   close,
   getAvailableYears,
   listReminderCandidates,
+  listMonthlyRecapCandidates,
   getPoolStats
 };
