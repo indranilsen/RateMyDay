@@ -145,14 +145,28 @@ router.get('/streak', async (req, res) => {
       return res.status(403).json({ message: 'Not logged in' });
     }
     try {
-      const [rows] = await db.query(
-        'SELECT rating_date FROM ratings WHERE user_id = ? ORDER BY rating_date ASC',
-        [userId]
-      );
-      if (rows.length === 0) {
-        return res.json({ current: 0, longest: 0 });
+      // Pull ratings + the user's settings row in parallel — settings holds
+      // the `lastSeenStreak` ack value used to drive the nav badge.
+      const [[ratingRows], [settingsRows]] = await Promise.all([
+        db.query('SELECT rating_date FROM ratings WHERE user_id = ? ORDER BY rating_date ASC', [userId]),
+        db.query('SELECT data FROM settings WHERE user_id = ? LIMIT 1', [userId])
+      ]);
+
+      let acknowledged = 0;
+      if (settingsRows.length > 0) {
+        let parsed = settingsRows[0].data;
+        if (typeof parsed === 'string') {
+          try { parsed = JSON.parse(parsed); } catch (e) { parsed = {}; }
+        }
+        if (parsed && typeof parsed.lastSeenStreak === 'number') {
+          acknowledged = parsed.lastSeenStreak;
+        }
       }
-      const dates = rows.map(r => r.rating_date.toISOString().split('T')[0]);
+
+      if (ratingRows.length === 0) {
+        return res.json({ current: 0, longest: 0, acknowledged });
+      }
+      const dates = ratingRows.map(r => r.rating_date.toISOString().split('T')[0]);
       const oneDayMs = 1000 * 60 * 60 * 24;
 
       // Longest historical run of consecutive days
@@ -183,12 +197,47 @@ router.get('/streak', async (req, res) => {
         cursor.setUTCDate(cursor.getUTCDate() - 1);
       }
 
-      res.json({ current, longest });
+      res.json({ current, longest, acknowledged });
     } catch (err) {
       console.error('Error computing streak', err);
       res.status(500).json({ message: 'Error computing streak' });
     }
   });
+
+// Acknowledge the current streak — clears the nav badge until the streak
+// grows further (or resets and starts a new one). Caller passes the value
+// they just saw so a stale client can't accidentally ack a higher value
+// than what's actually current.
+router.post('/streak/ack', async (req, res) => {
+  const userId = req.session.userId;
+  if (!userId) {
+    return res.status(403).json({ message: 'Not logged in' });
+  }
+  const seen = req.body && req.body.streak;
+  if (typeof seen !== 'number' || !Number.isFinite(seen) || seen < 0) {
+    return res.status(400).json({ message: 'streak must be a non-negative number' });
+  }
+  try {
+    // Upsert: if there's no settings row yet, create one with just this key.
+    // JSON_SET on a missing row would be a no-op, so we branch.
+    const [existing] = await db.query('SELECT 1 FROM settings WHERE user_id = ? LIMIT 1', [userId]);
+    if (existing.length > 0) {
+      await db.query(
+        `UPDATE settings SET data = JSON_SET(data, '$.lastSeenStreak', ?) WHERE user_id = ?`,
+        [seen, userId]
+      );
+    } else {
+      await db.query(
+        'INSERT INTO settings (user_id, data) VALUES (?, ?)',
+        [userId, JSON.stringify({ lastSeenStreak: seen })]
+      );
+    }
+    res.status(204).end();
+  } catch (err) {
+    console.error('Error acking streak', err);
+    res.status(500).json({ message: 'Error acknowledging streak' });
+  }
+});
 
 // Insights endpoint — personal analytics dashboard data
 router.get('/insights', async (req, res) => {

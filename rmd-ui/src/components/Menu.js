@@ -19,13 +19,23 @@ const Menu = ({ isMobile }) => {
   // user has a live "you're on a roll" indicator without cluttering the nav.
   // Refetches whenever the route changes so it stays current after a rating
   // submission (which always navigates).
+  //
+  // Badge visibility is driven by `current !== acknowledged` (not just
+  // `current > 0`): clicking Insights writes `lastSeenStreak = current`
+  // server-side, so the badge hides until the streak grows or a fresh
+  // streak starts after a break. Using `!==` instead of `>` means a fresh
+  // 1-day streak after a reset still notifies (1 !== <previous-ack>).
   const [streak, setStreak] = useState(null);
+  const [acknowledged, setAcknowledged] = useState(0);
   useEffect(() => {
     let cancelled = false;
     const fetchStreak = async () => {
       try {
         const response = await axios.get(`${ENDPOINT_PREFIX}/api/ratings/streak`, { withCredentials: true });
-        if (!cancelled) setStreak(response.data.current);
+        if (!cancelled) {
+          setStreak(response.data.current);
+          setAcknowledged(response.data.acknowledged || 0);
+        }
       } catch (err) {
         // Non-essential — silently leave the badge off
         if (!cancelled) setStreak(null);
@@ -34,6 +44,8 @@ const Menu = ({ isMobile }) => {
     fetchStreak();
     return () => { cancelled = true; };
   }, [location.pathname]);
+
+  const showStreakBadge = Boolean(streak) && streak !== acknowledged;
 
   const handleLogout = async () => {
     try {
@@ -51,6 +63,18 @@ const Menu = ({ isMobile }) => {
   };
 
   const handleInsights = () => {
+    // Optimistically clear the badge so the click feels instant, then fire
+    // the ack in the background. If the network call fails, the next
+    // route-change refetch will simply restore the real server state — so
+    // a transient failure means the badge briefly reappears, which is the
+    // right fail-mode (better than showing a wrong "you have an unseen
+    // streak" indicator).
+    if (streak && streak !== acknowledged) {
+      const seen = streak;
+      setAcknowledged(seen);
+      axios.post(`${ENDPOINT_PREFIX}/api/ratings/streak/ack`, { streak: seen }, { withCredentials: true })
+        .catch((err) => console.warn('Streak ack failed', err));
+    }
     navigate('/insights');
   };
 
@@ -102,7 +126,7 @@ const Menu = ({ isMobile }) => {
         <IconButton onClick={handleInsights} sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }} aria-label="insights">
           <Badge
             badgeContent={streak}
-            invisible={!streak || streak === 0}
+            invisible={!showStreakBadge}
             overlap="rectangular"
             sx={{
               '& .MuiBadge-badge': {
