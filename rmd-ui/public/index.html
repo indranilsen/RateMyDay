@@ -4,11 +4,13 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta
-      name="RateMyDay"
-      content="Track the quality of your day"
-    />
+    <!-- Mode-aware status-bar tint: matches the body bg in each theme so the
+         OS chrome (URL bar / iOS notch / Android status bar) doesn't jar
+         against the page. Two `media`-qualified meta tags is the standard
+         way to do this — older browsers ignore one and use the other. -->
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="Rate, note, and reflect on your day in seconds." />
     <link rel="apple-touch-icon" sizes="57x57" href="%PUBLIC_URL%/apple-icon-57x57.png">
     <link rel="apple-touch-icon" sizes="60x60" href="%PUBLIC_URL%/apple-icon-60x60.png">
     <link rel="apple-touch-icon" sizes="72x72" href="%PUBLIC_URL%/apple-icon-72x72.png">
@@ -39,7 +41,16 @@
     
     <meta name="msapplication-TileColor" content="#ffffff">
     <meta name="msapplication-TileImage" content="/ms-icon-144x144.png">
-    <meta name="theme-color" content="#ffffff">
+
+    <!-- iOS Add-to-Home-Screen support — iOS doesn't read the manifest's
+         `display: standalone`, it needs these meta tags to render the
+         home-screen launch as a full-screen webapp instead of opening
+         Safari with a URL bar. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="RateMyDay" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
     <title>RateMyDay</title>
   </head>
   <body>
