@@ -9,6 +9,9 @@
 // clears any cache that doesn't match, which discards previous versions.
 // Build hashes in CRA filenames mean stale JS/CSS are naturally orphaned and
 // will eventually fall out of the cache via the eviction logic below.
+// Bump on any SW logic change — the activate handler clears all caches
+// that don't match this exact string, so a version bump wipes stale state
+// for anyone already running with an older SW.
 const CACHE_VERSION = 'rmd-v1';
 const APP_BASE = '/rate-my-day/';
 
@@ -82,7 +85,11 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   // API calls must always be live — caching ratings would break the journal.
-  if (url.pathname.startsWith('/api/')) return;
+  // Match `/api/` anywhere in the path: in prod the API is served from
+  // /rate-my-day/api/* (same subpath as the SPA), not the bare /api/* I
+  // originally assumed. Using `.includes` covers both layouts and any
+  // future relocation without another regression.
+  if (url.pathname.includes('/api/')) return;
 
   // SPA navigations: network-first so deploys roll out fast, fall back to the
   // cached shell when offline.
