@@ -107,13 +107,20 @@ const DayRating = () => {
         }}>
         {format(date, 'MMM dd, yyyy')}
       </Typography>
+        {/* Rating buttons: 5x2 grid on mobile (symmetric, full-width touch
+            targets, no awkward wrap), single 10-cell row on desktop. CSS grid
+            with `minmax(0, 1fr)` lets cells stretch to fill the row evenly
+            instead of fixed-pixel widths that overflow narrow viewports. */}
         <Box sx={{
-          display: 'flex',
-          flexWrap: 'wrap', // Allow wrapping
-          justifyContent: 'center',
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: 'repeat(5, minmax(0, 1fr))',
+            sm: 'repeat(10, minmax(0, 1fr))'
+          },
+          gap: 1,
+          width: '100%',
+          maxWidth: { sm: '720px' },
           mb: 3,
-          gap: 1, // Add spacing between buttons
-          maxWidth: '100%', // Ensure it doesn't overflow
         }}>
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
             <Button
@@ -121,15 +128,17 @@ const DayRating = () => {
               variant={rating === value ? 'contained' : 'outlined'}
               onClick={() => handleRatingChange(value)}
               sx={{
-                mx: 1,
-                border: '1px solid grey',
-                width: '64px',
-                height: '64px',
-                color: 'grey',
+                minWidth: 0,
+                width: '100%',
+                aspectRatio: '1 / 1',
+                border: '1px solid',
+                borderColor: 'divider',
+                color: rating === value ? '#ffffff' : 'text.secondary',
                 bgcolor: rating === value ? DayRatingColors[value] : 'transparent',
                 '&:hover': {
-                  border: '1px solid grey',
-                  color: 'white',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  color: '#ffffff',
                   bgcolor: DayRatingColors[value],
                 },
               }}
@@ -146,10 +155,12 @@ const DayRating = () => {
             onChange={handleNoteChange}
             variant="outlined"
             sx={{
-                mb: 3, 
-                width: '60%', 
-                minWidth: '80%', 
-                marginTop: '1em', 
+                mb: 3,
+                // Full-width on mobile, ~80% on roomy viewports. The previous
+                // `width: 60% + minWidth: 80%` always resolved to 80%, masking
+                // the intent — make the responsive rule explicit.
+                width: { xs: '100%', sm: '80%' },
+                marginTop: '1em',
                 letterSpacing: '0.06em',
             }}
             InputLabelProps={{

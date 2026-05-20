@@ -97,14 +97,19 @@ const MonthView = () => {
             const note = dayRating?.note;
 
             return (
-              <Grid item key={index} sx={{ position: 'relative'}}>
+              // xs={1} with `columns={7}` makes each cell exactly 1/7 of the
+              // row. The Button below sets aspectRatio so cells stay square
+              // regardless of viewport — fixes the horizontal overflow that
+              // 64px fixed widths caused on a 375px phone.
+              <Grid item xs={1} key={index} sx={{ position: 'relative'}}>
                 <Tooltip title={note ? (note.length > 200 ? `${note.substring(0, 200)} ...` : note) : ''} arrow>
                   <Button
                     onClick={() => isDayClickable(day) && handleDayClick(day)}
                     disabled={!isDayClickable(day)}
                     sx={{
-                      width: '64px',
-                      height: '64px',
+                      minWidth: 0,
+                      width: '100%',
+                      aspectRatio: '1 / 1',
                       border: '1px solid',
                       borderColor: 'divider',
                       borderRadius: '4px',

@@ -75,18 +75,21 @@ const Menu = ({ isMobile }) => {
 
   return (
     <Box sx={{
-      ddisplay: 'flex',
+      display: 'flex',
       alignItems: 'center',
       position: isMobile ? 'relative' : 'absolute', // Only position absolutely on non-mobile
       right: 0,
       top: isMobile ? 0 : 'auto', // Adjust top only for mobile
-      padding: '10px',
-      height: '64px'
+      // Tighter on mobile: a 4-icon row + the theme pill was crowding the
+      // edges on a 375px viewport. Each IconButton also drops its default
+      // 12px padding to 6px on mobile to claw back ~24px across the row.
+      padding: { xs: '4px', sm: '10px' },
+      height: { xs: '48px', sm: '64px' }
     }}>
       {isAdmin &&
         (
-          <IconButton onClick={() => navigate('/admin')} sx={{ ...iconButtonStyle }}>
-            <AdminPanelSettingsIcon sx={{ fontSize: '2.5rem' }} />
+          <IconButton onClick={() => navigate('/admin')} sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }}>
+            <AdminPanelSettingsIcon sx={{ fontSize: { xs: '1.75rem', sm: '2.5rem' } }} />
           </IconButton>
         )
       }
@@ -96,7 +99,7 @@ const Menu = ({ isMobile }) => {
         leaveTouchDelay={2500}
         arrow
       >
-        <IconButton onClick={handleInsights} sx={{ ...iconButtonStyle }} aria-label="insights">
+        <IconButton onClick={handleInsights} sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }} aria-label="insights">
           <Badge
             badgeContent={streak}
             invisible={!streak || streak === 0}
@@ -119,15 +122,15 @@ const Menu = ({ isMobile }) => {
               }
             }}
           >
-            <BarChartIcon sx={{ fontSize: '2.5rem' }} />
+            <BarChartIcon sx={{ fontSize: { xs: '1.75rem', sm: '2.5rem' } }} />
           </Badge>
         </IconButton>
       </Tooltip>
-      <IconButton onClick={handleSettings} sx={{ ...iconButtonStyle }}>
-        <SettingsIcon sx={{ fontSize: '2.5rem' }} /> {/* Adjust icon size here */}
+      <IconButton onClick={handleSettings} sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }}>
+        <SettingsIcon sx={{ fontSize: { xs: '1.75rem', sm: '2.5rem' } }} />
       </IconButton>
-      <IconButton onClick={handleLogout} sx={{ ...iconButtonStyle }}>
-        <PowerSettingsNewIcon sx={{ fontSize: '2.5rem' }} /> {/* Adjust icon size here */}
+      <IconButton onClick={handleLogout} sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }}>
+        <PowerSettingsNewIcon sx={{ fontSize: { xs: '1.75rem', sm: '2.5rem' } }} />
       </IconButton>
     </Box>
   );
