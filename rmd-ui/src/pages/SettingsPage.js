@@ -14,9 +14,41 @@ import {
   Grid
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
-import moment from 'moment-timezone';
 import config from '../Config';
 import { useColorMode } from '../ThemeContext';
+
+// Native replacement for `moment.tz(zone).utcOffset()` — returns the
+// offset in minutes from UTC for the given IANA timezone. Drops the
+// moment-timezone dep (~150 KiB pre-gzip with all the timezone data).
+// Works by formatting "now" as if in the target TZ, parsing those parts
+// as if they were UTC, and diffing against actual UTC.
+const tzOffsetMinutes = (tz) => {
+  try {
+    const now = Date.now();
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    }).formatToParts(now).reduce((acc, p) => {
+      if (p.type !== 'literal') acc[p.type] = p.value;
+      return acc;
+    }, {});
+    // Some locales emit "24" for midnight — normalize to 0 to keep Date.UTC happy
+    let h = parseInt(parts.hour, 10);
+    if (h === 24) h = 0;
+    const asIfUtc = Date.UTC(
+      parseInt(parts.year, 10),
+      parseInt(parts.month, 10) - 1,
+      parseInt(parts.day, 10),
+      h,
+      parseInt(parts.minute, 10),
+      parseInt(parts.second, 10)
+    );
+    return Math.round((asIfUtc - now) / 60000);
+  } catch (e) {
+    return 0;
+  }
+};
 
 const ENDPOINT_PREFIX = config.ENDPOINT_PREFIX;
 
@@ -71,12 +103,12 @@ function findClosestMajorTimezone(userTz) {
     return userTz;
   }
 
-  const userOffset = moment.tz(userTz).utcOffset(); // offset in minutes from UTC
+  const userOffset = tzOffsetMinutes(userTz);
   let bestMatch = 'UTC';
   let bestDelta = Infinity;
 
   majorTimezones.forEach((tz) => {
-    const offset = moment.tz(tz).utcOffset();
+    const offset = tzOffsetMinutes(tz);
     const delta = Math.abs(offset - userOffset);
     if (delta < bestDelta) {
       bestDelta = delta;
@@ -92,9 +124,9 @@ const SettingsPage = () => {
   // changes apply immediately and are per-device — no Save click required.
   const { preference, setPreference } = useColorMode();
 
-  // Attempt to detect the browser's exact local zone
-  // If that fails, default to 'UTC'
-  const browserTimeZone = moment.tz.guess() || 'UTC';
+  // Attempt to detect the browser's exact local zone via native Intl
+  // (replaces moment.tz.guess()); default to 'UTC' if unavailable.
+  const browserTimeZone = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC';
   // Map it to the "closest" major zone
   const defaultTimeZone = findClosestMajorTimezone(browserTimeZone);
 

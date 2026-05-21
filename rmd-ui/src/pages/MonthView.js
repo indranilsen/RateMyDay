@@ -106,6 +106,7 @@ const MonthView = () => {
                   <Button
                     onClick={() => isDayClickable(day) && handleDayClick(day)}
                     disabled={!isDayClickable(day)}
+                    aria-label={`${format(day, 'MMMM d, yyyy')}${rating ? `, rated ${rating} out of 10` : ', not rated'}`}
                     sx={{
                       minWidth: 0,
                       width: '100%',

@@ -112,7 +112,11 @@ const Menu = ({ isMobile }) => {
     }}>
       {isAdmin &&
         (
-          <IconButton onClick={() => navigate('/admin')} sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }}>
+          <IconButton
+            onClick={() => navigate('/admin')}
+            sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }}
+            aria-label="admin panel"
+          >
             <AdminPanelSettingsIcon sx={{ fontSize: { xs: '1.75rem', sm: '2.5rem' } }} />
           </IconButton>
         )
@@ -132,9 +136,11 @@ const Menu = ({ isMobile }) => {
               '& .MuiBadge-badge': {
                 // Rating-3 from the day-rating palette — warm "streak" tone
                 // that pops against the otherwise-grey icon row without
-                // shouting like a notification-red would.
+                // shouting like a notification-red would. Dark text instead
+                // of white because white on #ff7c42 is ~2.85:1 (fails WCAG
+                // AA); a deep brown reads ~7.5:1 and keeps the warm vibe.
                 backgroundColor: DayRatingColors[3],
-                color: '#ffffff',
+                color: '#3a1500',
                 fontSize: '0.7rem',
                 fontWeight: 500,
                 minWidth: '20px',
@@ -150,10 +156,18 @@ const Menu = ({ isMobile }) => {
           </Badge>
         </IconButton>
       </Tooltip>
-      <IconButton onClick={handleSettings} sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }}>
+      <IconButton
+        onClick={handleSettings}
+        sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }}
+        aria-label="settings"
+      >
         <SettingsIcon sx={{ fontSize: { xs: '1.75rem', sm: '2.5rem' } }} />
       </IconButton>
-      <IconButton onClick={handleLogout} sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }}>
+      <IconButton
+        onClick={handleLogout}
+        sx={{ ...iconButtonStyle, p: { xs: 0.75, sm: 1 } }}
+        aria-label="log out"
+      >
         <PowerSettingsNewIcon sx={{ fontSize: { xs: '1.75rem', sm: '2.5rem' } }} />
       </IconButton>
     </Box>
