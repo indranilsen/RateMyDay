@@ -254,9 +254,13 @@ function buildRateButtonsHtml(appLink, targetDate) {
         ">${n}</a>
       </td>`);
   }
+  // Friendly day + month name with the raw ISO kept in parens so the user
+  // sees both — the long form for at-a-glance, the ISO so any link they
+  // share or screenshot still has the unambiguous machine-readable date.
+  const friendlyDate = moment(targetDate).format('dddd, MMMM D');
   return `
-    <p style="margin: 16px 0 8px 0; color: #808080; font-size: 14px; letter-spacing: 0.04em;">
-      Rate ${targetDate} in one click:
+    <p style="margin: 16px 0 8px 0; color: #787878; font-size: 13px; letter-spacing: 0.04em;">
+      Rate <span style="color: #404040; font-weight: 500;">${friendlyDate}</span> (${targetDate}) in one click:
     </p>
     <table style="margin: 0 auto; border-collapse: collapse;">
       <tr>${cells.join('')}</tr>
@@ -358,10 +362,10 @@ function getReminderEmailHtml(cadence, missedDays, appLink, targetDate) {
   } else if (cadence === 'weekly') {
     // List missed days
     const missedList = missedDays.map(d => `<li style="
-      margin: 16px 0;
-      font-weight: 100;
-      font-size: 16px;
-      color: #808080;
+      margin: 8px 0;
+      font-weight: 400;
+      font-size: 15px;
+      color: #505050;
       line-height: 1.5;
     ">${d}</li>`).join('');
 
@@ -374,7 +378,14 @@ function getReminderEmailHtml(cadence, missedDays, appLink, targetDate) {
 
   const rateButtonsHtml = targetDate ? buildRateButtonsHtml(appLink, targetDate) : '';
 
-  // Return an HTML template (inline styles for cross-client compatibility)
+  // Return an HTML template (inline styles for cross-client compatibility).
+  // Font stack is intentionally a "system stack" — Gmail and most webmail
+  // clients strip external <link rel="stylesheet"> for security, so any
+  // Google Fonts reference is dead bytes and the user sees Helvetica/Arial
+  // fallback anyway. The system stack uses the platform's native UI font
+  // (SF on Apple, Segoe on Windows, etc.) for a more polished look without
+  // any network dependency. Weights are kept at 400/500 — anything lighter
+  // (100/200/300) doesn't exist in the fallback fonts and renders inconsistently.
   return `
   <!DOCTYPE html>
 <html lang="en">
@@ -382,57 +393,59 @@ function getReminderEmailHtml(cadence, missedDays, appLink, targetDate) {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RateMyDay Reminder</title>
-    <!-- Link Roboto font -->
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400&display=swap" rel="stylesheet" />
 </head>
-<body style="margin: 0; padding: 0; background-color: #f7f7f7; font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;">
+<body style="margin: 0; padding: 0; background-color: #f7f7f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;">
 <div style="
     max-width: 600px;
     margin: 40px auto;
     background-color: #ffffff;
     border-radius: 8px;
-    padding: 24px;
-    border: 1px solid #ddd;
-    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+    padding: 32px 24px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.06);
   ">
+    <p style="text-align: center; margin: 0 0 4px 0; color: #a0a0a0; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;">
+      ${cadence === 'weekly' ? 'Weekly reminder' : 'Daily reminder'}
+    </p>
     <h2 style="
       text-align: center;
-      color: #787878;
-      margin-bottom: 20px;
-      font-weight: 200;
+      color: #404040;
+      margin: 0 0 24px 0;
+      font-weight: 500;
       font-size: 24px;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.02em;
     ">
-        Reflect on Your Day with <span style="font-weight: 300">RateMyDay</span>
+        <span style="color: #787878; font-weight: 400;">Reflect on Your Day with</span> RateMyDay
     </h2>
     <p style="
-      margin: 16px 0;
-      font-weight: 100;
-      font-size: 16px;
-      color: #808080;
+      margin: 16px auto;
+      max-width: 420px;
+      font-weight: 400;
+      font-size: 14px;
+      color: #505050;
       line-height: 1.5;
+      text-align: center;
     ">
         ${contentParagraph}
     </p>
     <div style="text-align: center; margin: 24px 0;">
         ${rateButtonsHtml}
-        <p style="margin: 24px 0 8px 0; color: #808080; font-size: 14px;">
+        <p style="margin: 28px 0 12px 0; color: #787878; font-size: 13px;">
           Or open the app to add a note:
         </p>
         <a href="${appLink}" style="
         display: inline-block;
-        border: 1px solid #2477C8FF;
-        color: #2477C8FF;
-        padding: 12px 24px;
+        border: 1px solid #787878;
+        color: #404040;
+        padding: 10px 22px;
         border-radius: 4px;
-        font-size: 16px;
-        font-weight: 300;
-        letter-spacing: 0.05em;
-        background-color: transparent;
-        box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0.06em;
+        background-color: #ffffff;
         text-decoration: none;
       ">
-            RateMyDay Now
+            RATEMYDAY NOW
         </a>
     </div>
 </div>

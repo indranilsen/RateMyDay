@@ -117,8 +117,8 @@ function getMonthlyRecapHtml(monthName, year, stats, appLink) {
 
   const topDayBlock = stats.topDay ? `
     <tr>
-      <td style="padding: 8px 0; color: #808080; font-size: 14px;">Top day</td>
-      <td style="padding: 8px 0; text-align: right; color: #404040; font-size: 14px;">
+      <td style="padding: 8px 0; color: #787878; font-size: 14px;">Top day</td>
+      <td style="padding: 8px 0; text-align: right; color: #404040; font-size: 14px; font-weight: 500;">
         ${stats.topDay.date}
         <span style="
           display: inline-block;
@@ -139,8 +139,8 @@ function getMonthlyRecapHtml(monthName, year, stats, appLink) {
 
   const bottomDayBlock = stats.bottomDay && (!stats.topDay || stats.bottomDay.date !== stats.topDay.date) ? `
     <tr>
-      <td style="padding: 8px 0; color: #808080; font-size: 14px;">Toughest day</td>
-      <td style="padding: 8px 0; text-align: right; color: #404040; font-size: 14px;">
+      <td style="padding: 8px 0; color: #787878; font-size: 14px;">Toughest day</td>
+      <td style="padding: 8px 0; text-align: right; color: #404040; font-size: 14px; font-weight: 500;">
         ${stats.bottomDay.date}
         <span style="
           display: inline-block;
@@ -159,6 +159,10 @@ function getMonthlyRecapHtml(monthName, year, stats, appLink) {
       </td>
     </tr>` : '';
 
+  // System font stack — see note in reminder-task.js getReminderEmailHtml.
+  // Webmail clients strip external stylesheet links; Roboto in the stack
+  // means it'll still be used when locally installed, otherwise system UI
+  // font (SF / Segoe / etc.) renders crisply at any weight ≥ 400.
   return `
   <!DOCTYPE html>
 <html lang="en">
@@ -166,30 +170,29 @@ function getMonthlyRecapHtml(monthName, year, stats, appLink) {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Your ${monthName} on RateMyDay</title>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400&display=swap" rel="stylesheet" />
 </head>
-<body style="margin: 0; padding: 0; background-color: #f7f7f7; font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;">
+<body style="margin: 0; padding: 0; background-color: #f7f7f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;">
 <div style="
     max-width: 600px;
     margin: 40px auto;
     background-color: #ffffff;
     border-radius: 8px;
-    padding: 24px;
-    border: 1px solid #ddd;
-    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+    padding: 32px 24px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.06);
   ">
     <p style="text-align: center; margin: 0 0 4px 0; color: #a0a0a0; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;">
       Your monthly recap
     </p>
     <h2 style="
       text-align: center;
-      color: #505050;
+      color: #404040;
       margin: 0 0 24px 0;
-      font-weight: 200;
-      font-size: 26px;
-      letter-spacing: 0.04em;
+      font-weight: 500;
+      font-size: 24px;
+      letter-spacing: 0.02em;
     ">
-        ${monthName} <span style="color: #a0a0a0; font-weight: 100;">${year}</span>
+        ${monthName} <span style="color: #787878; font-weight: 400;">${year}</span>
     </h2>
 
     <div style="text-align: center; margin: 24px 0;">
@@ -200,20 +203,20 @@ function getMonthlyRecapHtml(monthName, year, stats, appLink) {
         line-height: 96px;
         background-color: ${avgColor};
         color: #ffffff;
-        font-size: 36px;
-        font-weight: 300;
+        font-size: 34px;
+        font-weight: 500;
         border-radius: 50%;
       ">${avgStr}</div>
-      <p style="margin: 8px 0 0 0; color: #808080; font-size: 13px; letter-spacing: 0.06em;">
+      <p style="margin: 8px 0 0 0; color: #787878; font-size: 12px; letter-spacing: 0.08em;">
         AVERAGE RATING
       </p>
     </div>
 
     <table style="width: 100%; border-collapse: collapse; margin: 24px 0;">
       <tr>
-        <td style="padding: 8px 0; color: #808080; font-size: 14px;">Days rated</td>
-        <td style="padding: 8px 0; text-align: right; color: #404040; font-size: 14px;">
-          ${stats.daysRated} <span style="color: #a0a0a0;">/ ${stats.daysInMonth}</span>
+        <td style="padding: 8px 0; color: #787878; font-size: 14px;">Days rated</td>
+        <td style="padding: 8px 0; text-align: right; color: #404040; font-size: 14px; font-weight: 500;">
+          ${stats.daysRated} <span style="color: #a0a0a0; font-weight: 400;">/ ${stats.daysInMonth}</span>
         </td>
       </tr>
       ${topDayBlock}
@@ -227,18 +230,17 @@ function getMonthlyRecapHtml(monthName, year, stats, appLink) {
     <div style="text-align: center; margin: 32px 0 8px 0;">
         <a href="${appLink}/insights" style="
         display: inline-block;
-        border: 1px solid #2477C8FF;
-        color: #2477C8FF;
-        padding: 12px 24px;
+        border: 1px solid #787878;
+        color: #404040;
+        padding: 10px 22px;
         border-radius: 4px;
-        font-size: 16px;
-        font-weight: 300;
-        letter-spacing: 0.05em;
-        background-color: transparent;
-        box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0.06em;
+        background-color: #ffffff;
         text-decoration: none;
       ">
-            See full insights
+            SEE FULL INSIGHTS
         </a>
     </div>
     <p style="text-align: center; margin: 16px 0 0 0; color: #a0a0a0; font-size: 11px;">
