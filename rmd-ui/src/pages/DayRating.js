@@ -135,11 +135,20 @@ const DayRating = () => {
                 borderColor: 'divider',
                 color: rating === value ? '#ffffff' : 'text.secondary',
                 bgcolor: rating === value ? DayRatingColors[value] : 'transparent',
-                '&:hover': {
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  color: '#ffffff',
-                  bgcolor: DayRatingColors[value],
+                // Hover preview is mouse/trackpad only. On touchscreens
+                // (`hover: none`) the tap would trigger :hover and the
+                // browser would keep that state until the user tapped
+                // elsewhere — making the rating look stuck on the wrong
+                // value. Gating with `@media (hover: hover)` skips the
+                // hover paint on touch entirely; selection is driven only
+                // by the `rating === value` check above.
+                '@media (hover: hover)': {
+                  '&:hover': {
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    color: '#ffffff',
+                    bgcolor: DayRatingColors[value],
+                  },
                 },
               }}
             >
