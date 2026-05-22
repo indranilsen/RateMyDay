@@ -34,7 +34,12 @@ const Menu = ({ isMobile }) => {
         const response = await axios.get(`${ENDPOINT_PREFIX}/api/ratings/streak`, { withCredentials: true });
         if (!cancelled) {
           setStreak(response.data.current);
-          setAcknowledged(response.data.acknowledged || 0);
+          // Take max(local, server) instead of overwriting unconditionally:
+          // protects the optimistic ack from `handleInsights` against the
+          // race where the route-change refetch resolves before the in-flight
+          // POST /streak/ack lands (which would carry an older `acknowledged`
+          // value and resurrect the badge until the next nav refetched).
+          setAcknowledged(prev => Math.max(prev, response.data.acknowledged || 0));
         }
       } catch (err) {
         // Non-essential — silently leave the badge off

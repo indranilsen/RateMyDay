@@ -16,6 +16,39 @@ const isSafeNext = (p) =>
   && !p.startsWith('//')
   && !p.startsWith('/\\');
 
+// Shared form styling — pulls Login + Register into the same muted-grey
+// palette the rest of the app uses (DayRating note field, Settings save
+// button, etc.). Without these overrides MUI defaults to its primary blue
+// for both the input focus ring and the contained Button.
+const textFieldSx = {
+  '& label.Mui-focused': { color: 'text.secondary' },
+  '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
+    borderColor: 'text.secondary'
+  }
+};
+const primaryButtonSx = {
+  mt: 3,
+  mb: 2,
+  border: '1px solid',
+  borderColor: 'text.secondary',
+  color: 'text.secondary',
+  backgroundColor: 'background.paper',
+  letterSpacing: '0.06em',
+  boxShadow: 'none',
+  '&:hover': {
+    color: 'background.paper',
+    backgroundColor: 'text.secondary',
+    borderColor: 'text.secondary',
+    boxShadow: 'none'
+  }
+};
+const linkButtonSx = {
+  mt: 1,
+  color: 'text.secondary',
+  letterSpacing: '0.04em',
+  '&:hover': { backgroundColor: 'action.hover' }
+};
+
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,8 +85,21 @@ function LoginPage() {
   return (
     <Container component="main" maxWidth="xs">
       <Box sx={{ marginTop: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <Typography component="h1" variant="h5">Sign In</Typography>
-        <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1 }}>
+        <Typography
+          component="h1"
+          variant="h4"
+          align="center"
+          sx={{
+            mb: 3,
+            fontWeight: '100',
+            color: 'grey',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase'
+          }}
+        >
+          Sign In
+        </Typography>
+        <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1, width: '100%' }}>
           <TextField
             margin="normal"
             required
@@ -65,6 +111,7 @@ function LoginPage() {
             autoFocus
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            sx={textFieldSx}
           />
           <TextField
             margin="normal"
@@ -77,10 +124,11 @@ function LoginPage() {
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            sx={textFieldSx}
           />
           {error && <Typography color="error" variant="body2">{error}</Typography>}
-          <Button type="submit" fullWidth variant="contained" sx={{ mt: 3, mb: 2 }}>Sign In</Button>
-          <Button component={Link} to="/register" fullWidth variant="text" sx={{ mt: 1 }}>Register</Button>
+          <Button type="submit" fullWidth variant="outlined" sx={primaryButtonSx}>Sign In</Button>
+          <Button component={Link} to="/register" fullWidth variant="text" sx={linkButtonSx}>Register</Button>
         </Box>
       </Box>
     </Container>

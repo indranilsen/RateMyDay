@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { format } from 'date-fns';
-import { Button, TextField, Box, Typography, Paper } from '@mui/material';
+import { Button, TextField, Box, Typography, Paper, Snackbar, Alert } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import { useNavigate, useParams } from 'react-router-dom';
 import DayRatingColors from '../RatingColor'
@@ -27,6 +27,13 @@ const DayRating = () => {
   const [date, setDate] = useState(() => determineDate(year, month, day));
   const [rating, setRating] = useState(null);
   const [note, setNote] = useState('');
+  // Save state — when the POST fails (network blip, session expired,
+  // server error) we surface the failure as a Snackbar and keep the
+  // form state intact instead of silently swallowing the error and
+  // navigating away. Losing a day's note to a transient error is the
+  // worst-case UX for a journaling app.
+  const [saving, setSaving] = useState(false);
+  const [errorFlash, setErrorFlash] = useState('');
 
   useEffect(() => {
     const handleUnauthorized = () => {
@@ -79,6 +86,7 @@ const DayRating = () => {
   };
 
   const handleSave = async () => {
+    setSaving(true);
     try {
       const ratingDate = format(date, 'yyyy-MM-dd');
       await axios.post(`${ENDPOINT_PREFIX}/api/ratings/submit-rating`, {
@@ -91,6 +99,18 @@ const DayRating = () => {
       navigate(`/month-view/${format(date, 'yyyy')}/${format(date, 'MM')}`);
     } catch (error) {
       console.error('Error submitting rating', error);
+      // Don't navigate, don't clear the form — show the user what went
+      // wrong and let them retry. The interceptor will still bounce a
+      // 401/403 to /login (with `?next=` so they return here), so the
+      // common "session expired" case auto-recovers; for everything
+      // else (5xx, network failure, etc.) the user's note is preserved.
+      const status = error.response && error.response.status;
+      if (status === 401 || status === 403) {
+        return; // unauthorized handler / interceptor takes over
+      }
+      setErrorFlash('Could not save. Your note is still here — try again.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -188,7 +208,7 @@ const DayRating = () => {
                 },
             }}
         />
-        <Button elevation={0} variant="outlined" onClick={handleSave} endIcon={<SaveIcon />} sx={{
+        <Button elevation={0} variant="outlined" onClick={handleSave} disabled={saving} endIcon={<SaveIcon />} sx={{
             mb: 3,
             boxShadow: 'none',
             // Theme-aware so this doesn't render as white-on-dark in dark mode
@@ -211,9 +231,20 @@ const DayRating = () => {
                 boxShadow: 'none',
             }
             }}>
-          Save
+          {saving ? 'Saving…' : 'Save'}
         </Button>
       </Paper>
+
+      <Snackbar
+        open={Boolean(errorFlash)}
+        autoHideDuration={6000}
+        onClose={() => setErrorFlash('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="error" onClose={() => setErrorFlash('')}>
+          {errorFlash}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

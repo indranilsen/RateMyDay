@@ -11,7 +11,9 @@ import {
   InputLabel,
   Button,
   FormControl,
-  Grid
+  Grid,
+  Snackbar,
+  Alert
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import config from '../Config';
@@ -140,6 +142,10 @@ const SettingsPage = () => {
   });
 
   const [loading, setLoading] = useState(true);
+  // Snackbar channels — same pattern the admin pages use so success and
+  // failure render in the right Alert severity instead of a native alert().
+  const [flash, setFlash] = useState('');
+  const [errorFlash, setErrorFlash] = useState('');
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -167,10 +173,10 @@ const SettingsPage = () => {
       await axios.post(`${ENDPOINT_PREFIX}/api/settings`, settings, {
         withCredentials: true
       });
-      alert('Settings saved successfully!');
+      setFlash('Settings saved.');
     } catch (error) {
       console.error('Error saving settings', error);
-      alert('Could not save settings.');
+      setErrorFlash('Could not save settings.');
     }
   };
 
@@ -379,6 +385,28 @@ const SettingsPage = () => {
           Save Settings
         </Button>
       </Paper>
+
+      <Snackbar
+        open={Boolean(flash)}
+        autoHideDuration={4000}
+        onClose={() => setFlash('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="success" onClose={() => setFlash('')}>
+          {flash}
+        </Alert>
+      </Snackbar>
+
+      <Snackbar
+        open={Boolean(errorFlash)}
+        autoHideDuration={5000}
+        onClose={() => setErrorFlash('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="error" onClose={() => setErrorFlash('')}>
+          {errorFlash}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

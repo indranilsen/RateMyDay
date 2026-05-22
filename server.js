@@ -102,10 +102,19 @@ app.use(session({
   store: sessionStore,
   resave: false,
   saveUninitialized: false,
+  // `rolling: true` refreshes the cookie expiration on every request so
+  // an active user never gets kicked mid-edit. Without it (the default),
+  // the expiration is stamped at login and the user is logged out exactly
+  // `maxAge` later regardless of activity — symptom was: type a day note,
+  // hit Save, get bounced to /login mid-write because the 2h ceiling hit.
+  rolling: true,
   cookie: {
     secure: 'auto', // cookie is secure in HTTPS environments
     httpOnly: true,
-    maxAge: 2 * 60 * 60 * 1000 // Sets the cookie expiration to 2 hours
+    // 7 days — sleepy enough for a daily journaling cadence without
+    // requiring monthly logins. The rolling refresh above means anyone
+    // who opens the app at least once a week stays logged in indefinitely.
+    maxAge: 7 * 24 * 60 * 60 * 1000
   }
 }));
 
