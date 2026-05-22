@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import axios from 'axios';
 
@@ -11,17 +11,24 @@ const ENDPOINT_PREFIX = config.ENDPOINT_PREFIX;
 //   /rate?date=YYYY-MM-DD&value=1..10
 // We submit the rating immediately, then drop the user on the day-rating
 // page for that date so they can optionally add a note. If the session
-// cookie is missing the global axios interceptor will bounce them to /login.
+// cookie is missing the global axios interceptor fires the "unauthorized"
+// event; our listener forwards to /login but threads `?next=` through so
+// post-login we land back on `/rate?…` and the rating still gets submitted.
 const RateRedirect = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // The global interceptor handles 401/403 (sends an "unauthorized" event).
-    // Listen here so a fresh-tab visit without a session lands on /login
-    // instead of getting stuck on the loading spinner.
-    const handleUnauthorized = () => navigate('/login');
+    // Preserve the original URL (path + query) so LoginPage can navigate
+    // back to it after auth and the rating submit can complete naturally.
+    // useLocation() returns the path with the Router basename already
+    // stripped, so this is a clean relative path.
+    const handleUnauthorized = () => {
+      const returnTo = `${location.pathname}${location.search}`;
+      navigate(`/login?next=${encodeURIComponent(returnTo)}`, { replace: true });
+    };
     window.addEventListener('unauthorized', handleUnauthorized);
 
     const date = searchParams.get('date');
@@ -36,9 +43,14 @@ const RateRedirect = () => {
 
     const submit = async () => {
       try {
+        // Intentionally OMIT the `note` field so the server preserves any
+        // existing note on this date — the email button only conveys a
+        // rating change, not a note edit. The submit-rating handler treats
+        // a missing `note` as "keep what's there" (vs. an empty string,
+        // which would explicitly clear the note).
         await axios.post(
           `${ENDPOINT_PREFIX}/api/ratings/submit-rating`,
-          { ratingDate: date, rating: value, note: '' },
+          { ratingDate: date, rating: value },
           { withCredentials: true }
         );
         const [y, m, d] = date.split('-');
@@ -56,7 +68,7 @@ const RateRedirect = () => {
 
     submit();
     return () => window.removeEventListener('unauthorized', handleUnauthorized);
-  }, [searchParams, navigate]);
+  }, [searchParams, navigate, location.pathname, location.search]);
 
   if (error) {
     return (

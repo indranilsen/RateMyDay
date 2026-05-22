@@ -15,8 +15,17 @@ const formatRatingDate = (ratings) => {
 // Submit rating endpoint
 router.post('/submit-rating', async (req, res) => {
     const userId = req.session.userId;
-    const { ratingDate, rating, note } = req.body;
-  
+    const { ratingDate, rating, note } = req.body || {};
+
+    // PATCH-style semantics on the `note` field (RFC 7396 / JSON Merge Patch):
+    //   - field absent from body  -> preserve existing note (no change)
+    //   - field present (any value, including '') -> set to that value
+    // This lets the email's one-click flow (which only conveys a rating)
+    // change the rating without wiping a note the user has already written.
+    // The day-rating page still always sends `note`, so explicit edits and
+    // explicit clears keep working.
+    const noteProvided = req.body !== null && typeof req.body === 'object' && Object.prototype.hasOwnProperty.call(req.body, 'note');
+
     // Basic validation
     if (!userId) {
       return res.status(403).json({ message: 'Not logged in' });
@@ -24,18 +33,26 @@ router.post('/submit-rating', async (req, res) => {
     if (!ratingDate || rating === undefined || rating < 1 || rating > 10) {
       return res.status(400).json({ message: 'Invalid rating data' });
     }
-  
+
     try {
       // Check if a rating already exists for the given date
       const [existing] = await db.query('SELECT id FROM ratings WHERE user_id = ? AND rating_date = ?', [userId, ratingDate]);
-      
+
       if (existing.length > 0) {
-        // Update the existing rating
-        await db.query('UPDATE ratings SET rating = ?, note = ? WHERE id = ?', [rating, note, existing[0].id]);
+        if (noteProvided) {
+          await db.query('UPDATE ratings SET rating = ?, note = ? WHERE id = ?', [rating, note, existing[0].id]);
+        } else {
+          // Only touch the rating column — leaves note exactly as it was.
+          await db.query('UPDATE ratings SET rating = ? WHERE id = ?', [rating, existing[0].id]);
+        }
         res.json({ message: 'Rating updated successfully' });
       } else {
-        // Insert a new rating
-        await db.query('INSERT INTO ratings (user_id, rating_date, rating, note) VALUES (?, ?, ?, ?)', [userId, ratingDate, rating, note]);
+        // Fresh row — if no note was provided, store NULL rather than the
+        // string "undefined" the old code would have inserted on a missing field.
+        await db.query(
+          'INSERT INTO ratings (user_id, rating_date, rating, note) VALUES (?, ?, ?, ?)',
+          [userId, ratingDate, rating, noteProvided ? note : null]
+        );
         res.json({ message: 'Rating submitted successfully' });
       }
     } catch (error) {

@@ -1,16 +1,27 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { TextField, Button, Box, Typography, Container } from '@mui/material';
 import config from '../Config';
 
 const ENDPOINT_PREFIX = config.ENDPOINT_PREFIX;
+
+// Open-redirect guard — only allow same-origin relative paths. A safe path
+// must start with `/` (so the router resolves it against this origin),
+// not with `//` (protocol-relative external), and not with `/\\` (some
+// URL parsers normalize backslashes to slashes, opening a side channel).
+const isSafeNext = (p) =>
+  typeof p === 'string'
+  && p.startsWith('/')
+  && !p.startsWith('//')
+  && !p.startsWith('/\\');
 
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -23,7 +34,16 @@ function LoginPage() {
       // Store userRole in localStorage or a React Context or Redux
       localStorage.setItem('userRole', userRole);
 
-      navigate('/month-view'); // Navigate to the month view upon successful login
+      // If we got here via a redirect (e.g. clicking an email's rate button
+      // while logged out), `?next=` carries the original URL. After auth,
+      // hand the user back to that destination so the flow they started
+      // completes instead of dumping them on /month-view.
+      const next = searchParams.get('next');
+      if (isSafeNext(next)) {
+        navigate(next, { replace: true });
+      } else {
+        navigate('/month-view');
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Error logging in');
     }
