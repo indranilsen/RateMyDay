@@ -19,8 +19,20 @@ const loginLimiter = rateLimit({
   message: { message: 'Too many login attempts. Please try again in a minute.' }
 });
 
+// Slow down account-creation abuse: a flood of register calls is a way to
+// enumerate existing emails (409 vs 201) and to pollute the users table.
+// 3/minute/IP is tighter than login because legitimate registration is
+// rare — a real person creates an account once per device, not five times.
+const registerLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many registration attempts. Please try again in a minute.' }
+});
+
 // Registration endpoint
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, async (req, res) => {
   const { firstName, lastName, dob, email, password } = req.body;
 
   if (!firstName || !lastName || !dob || !email || !password) {
@@ -59,27 +71,39 @@ router.post('/login', loginLimiter, async (req, res) => {
     return res.status(400).json({ message: 'Please provide both email and password' });
   }
 
+  // Returning the same message for "no such user" and "wrong password" stops
+  // login from being a free oracle for enumerating which emails are
+  // registered. (We still 401 either way; the body is constant-text.)
+  const GENERIC_LOGIN_ERROR = 'Invalid email or password';
+
   try {
     // Retrieve user from the database (only the columns we actually need)
     const [users] = await db.query('SELECT id, password, user_role FROM users WHERE email = ?', [email]);
     const user = users[0];
 
     if (!user) {
-      return res.status(401).json({ message: 'User does not exist' });
+      // Burn a constant amount of CPU on the "no such user" branch so the
+      // response timing doesn't itself reveal whether the email exists.
+      // bcrypt.compare against a known-bad hash takes the same time as a
+      // real verify at the same cost factor.
+      await bcrypt.compare(password, '$2b$10$abcdefghijklmnopqrstuuOzPK0YJsRZ0lE7zX2vQRwXh3PZQQjEPq');
+      return res.status(401).json({ message: GENERIC_LOGIN_ERROR });
     }
 
-    // Verify the password
     const isPasswordValid = await bcrypt.compare(password, user.password);
-
     if (!isPasswordValid) {
-      return res.status(401).json({ message: 'Invalid password' });
+      return res.status(401).json({ message: GENERIC_LOGIN_ERROR });
     }
 
-    // Start a session. Stash the user_role on the session so the admin
-    // middleware can authorize without an extra DB roundtrip on every
-    // admin request (it now falls back to a DB read only for sessions
-    // that predate this change, i.e. existing sessions whose row was
-    // serialized before we started storing role).
+    // Rotate the session ID on successful login to prevent session
+    // fixation: an attacker who planted their own session cookie on the
+    // victim (e.g. via XSS on a sister site) can't ride it into the
+    // authenticated session because express-session issues a fresh ID
+    // after regenerate(). The userId + userRole are written on the
+    // NEW session.
+    await new Promise((resolve, reject) =>
+      req.session.regenerate((err) => (err ? reject(err) : resolve())));
+
     req.session.userId = user.id;
     req.session.userRole = user.user_role;
     res.json({ message: 'Login successful', role: user.user_role });

@@ -106,11 +106,20 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// Session configuration
+// Session configuration. In production the secret MUST be set in the
+// environment — falling back to a fresh random secret on each boot would
+// silently invalidate every active session on every PM2 reload, *and*
+// reading "I happened to log in just before a deploy" as a tampering
+// signal is a real security regression. Outside production we accept
+// the random fallback so `npm start` Just Works for local dev.
 let sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret || sessionSecret === '') {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[Init] SESSION_SECRET is required in production. Refusing to start.');
+    process.exit(1);
+  }
   sessionSecret = crypto.randomBytes(32).toString('hex');
-  console.log('Creating new session secret')
+  console.log('Creating new session secret');
 }
 
 app.use(session({
@@ -127,6 +136,13 @@ app.use(session({
   cookie: {
     secure: 'auto', // cookie is secure in HTTPS environments
     httpOnly: true,
+    // SameSite=lax: browser refuses to send the session cookie on cross-
+    // site POSTs (subdomain/external page can't trigger an authenticated
+    // state-changing request). Modern CSRF defense — pairs with our CORS
+    // allowlist. 'lax' (not 'strict') so top-level navigations like
+    // clicking the email's "RATEMYDAY NOW" link still send the cookie.
+    sameSite: 'lax',
+    path: '/',
     // 7 days — sleepy enough for a daily journaling cadence without
     // requiring monthly logins. The rolling refresh above means anyone
     // who opens the app at least once a week stays logged in indefinitely.

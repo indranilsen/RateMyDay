@@ -4,6 +4,32 @@ const { db, getAvailableYears } = require('../db');
 
 const { format } = require('date-fns');
 
+// Reject non-ISO date strings before they reach the DB. We use parameterized
+// queries so injection isn't possible, but a typo'd or hostile payload
+// (e.g. "tomorrow", "; DROP TABLE…", "2026-99-99") would otherwise be
+// stored verbatim in TEXT columns on SQLite and cause confused reads later.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isValidIsoDate = (s) => {
+  if (typeof s !== 'string' || !ISO_DATE_RE.test(s)) return false;
+  // Catch impossible combos like 2026-02-31 — Date.parse accepts them
+  // by overflowing into March, so we round-trip and compare.
+  const d = new Date(s + 'T00:00:00Z');
+  if (Number.isNaN(d.getTime())) return false;
+  return d.toISOString().slice(0, 10) === s;
+};
+
+// Parse a positive integer from a query string param. Returns null if the
+// value is missing, non-numeric, or outside the supplied [min,max] range —
+// the route then 400s with a clear message instead of asking SQL to coerce.
+const parseIntParam = (raw, min, max) => {
+  if (raw === undefined || raw === null) return null;
+  const s = String(raw);
+  if (!/^\d+$/.test(s)) return null;
+  const n = parseInt(s, 10);
+  if (!Number.isFinite(n) || n < min || n > max) return null;
+  return n;
+};
+
 // Utility function to format the rating_date
 const formatRatingDate = (ratings) => {
     return ratings.map(rating => ({
@@ -30,7 +56,7 @@ router.post('/submit-rating', async (req, res) => {
     if (!userId) {
       return res.status(403).json({ message: 'Not logged in' });
     }
-    if (!ratingDate || rating === undefined || rating < 1 || rating > 10) {
+    if (!isValidIsoDate(ratingDate) || !Number.isInteger(rating) || rating < 1 || rating > 10) {
       return res.status(400).json({ message: 'Invalid rating data' });
     }
 
@@ -66,13 +92,13 @@ router.post('/submit-rating', async (req, res) => {
 router.get('/submit-rating', async (req, res) => {
     const userId = req.session.userId;
     const { ratingDate } = req.query;
-  
+
     // Basic validation
     if (!userId) {
       return res.status(403).json({ message: 'Not logged in' });
     }
-    if (!ratingDate) {
-      return res.status(400).json({ message: 'No date provided' });
+    if (!isValidIsoDate(ratingDate)) {
+      return res.status(400).json({ message: 'Invalid date — must be YYYY-MM-DD' });
     }
   
     try {
@@ -94,16 +120,17 @@ router.get('/submit-rating', async (req, res) => {
 // Get month data endpoint
 router.get('/month-data', async (req, res) => {
     const userId = req.session.userId;
-    const { year, month } = req.query;
-  
+
     // Basic validation
     if (!userId) {
       return res.status(403).json({ message: 'Not logged in' });
     }
-    if (!year || !month) {
-      return res.status(400).json({ message: 'Year and month are required' });
+    const year = parseIntParam(req.query.year, 1970, 9999);
+    const month = parseIntParam(req.query.month, 1, 12);
+    if (year === null || month === null) {
+      return res.status(400).json({ message: 'Invalid year/month' });
     }
-  
+
     try {
       // Calculate the start and end dates of the month
       const startDate = new Date(year, month - 1, 1);
@@ -125,16 +152,16 @@ router.get('/month-data', async (req, res) => {
 // Year data endpoint
 router.get('/year-data', async (req, res) => {
     const userId = req.session.userId;
-    const { year } = req.query;
-  
+
     // Basic validation
     if (!userId) {
       return res.status(403).json({ message: 'Not logged in' });
     }
-    if (!year) {
-      return res.status(400).json({ message: 'Year is required' });
+    const year = parseIntParam(req.query.year, 1970, 9999);
+    if (year === null) {
+      return res.status(400).json({ message: 'Invalid year' });
     }
-  
+
     try {
       // Calculate the start and end dates of the year
       const startDate = `${year}-01-01`; // January 1st of the year
