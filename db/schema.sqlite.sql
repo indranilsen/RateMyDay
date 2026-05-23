@@ -25,3 +25,8 @@ CREATE TABLE IF NOT EXISTS settings (
   data TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- Speed up `SELECT … FROM settings WHERE user_id = ?` (every settings GET,
+-- every streak/ack, every reminder cron pass) and enforce the one-row-per-user
+-- invariant the routes already assume.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_settings_user_id ON settings(user_id);

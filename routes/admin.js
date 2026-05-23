@@ -14,22 +14,50 @@ const requestStats = require('../request-stats');
 
 const execFileAsync = promisify(execFile);
 
+// Static system facts that never change for the lifetime of the process.
+// Computing them once at module load saves a sysctl/proc-read per /stats
+// request (the admin panel polls this every 5s while open).
+const CACHED_HOSTNAME = os.hostname();
+const CACHED_CPU_COUNT = os.cpus().length;
+const CACHED_NODE_VERSION = process.version;
+
+// Cached disk-usage snapshot. The underlying statfs syscall isn't expensive
+// per call but it dominates this endpoint's latency, and disk usage moves
+// slowly enough that a 5s TTL is invisible to a human watching the panel.
+let diskCache = { at: 0, value: null };
+const DISK_TTL_MS = 5000;
+
 // Cap for the ad-hoc email blaster; anything larger is almost certainly a mistake
 const MAX_RECIPIENTS = 1000;
 const EMAIL_BATCH_SIZE = 10;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Middleware: Check if user is admin
+// Middleware: Check if user is admin.
+//
+// Fast path: the session itself carries `userRole` (set at login). For
+// authenticated admins this skips a DB roundtrip per admin request —
+// which adds up because the admin UI polls /pm2/status and /health-metrics
+// every few seconds.
+//
+// Slow path: a session created before we started storing `userRole` won't
+// have it. Fall back to a DB lookup and patch it into the session for
+// future requests on this session.
 router.use(async (req, res, next) => {
   if (!req.session.userId) {
     return res.status(403).json({ message: 'Not logged in' });
   }
+  if (req.session.userRole === 'admin') {
+    return next();
+  }
+  if (req.session.userRole && req.session.userRole !== 'admin') {
+    return res.status(403).json({ message: 'Not authorized' });
+  }
   try {
-    // Query the user's role
     const [rows] = await db.query('SELECT user_role FROM users WHERE id=?', [req.session.userId]);
     if (!rows.length || rows[0].user_role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
+    req.session.userRole = rows[0].user_role;
     next();
   } catch (err) {
     console.error('Error checking admin role', err);
@@ -43,12 +71,9 @@ router.use(async (req, res, next) => {
  */
 router.get('/stats', async (req, res) => {
   try {
-    const hostname = os.hostname();
-    const nodeVersion = process.version;
-
-    // 1) CPU — raw numbers; the frontend turns them into bars/sparklines
+    // 1) CPU — raw numbers; the frontend turns them into bars/sparklines.
+    // loadavg() is a cheap read; cpuCount is constant for the process.
     const load = os.loadavg();
-    const cpuCount = os.cpus().length;
     const cpuLoad = {
       l1: load[0],
       l5: load[1],
@@ -58,27 +83,32 @@ router.get('/stats', async (req, res) => {
 
     // 2) Memory — both process RSS and system-wide so the page can show a real % bar
     const memProc = process.memoryUsage();
+    const total = os.totalmem();
+    const free = os.freemem();
     const memory = {
       rssBytes: memProc.rss,
       heapUsedBytes: memProc.heapUsed,
       heapTotalBytes: memProc.heapTotal,
-      totalBytes: os.totalmem(),
-      freeBytes: os.freemem(),
-      usedBytes: os.totalmem() - os.freemem()
+      totalBytes: total,
+      freeBytes: free,
+      usedBytes: total - free
     };
 
-    // 3) Disk — same idea, raw bytes
-    let disk = null;
-    try {
-      const root = path.parse(process.cwd()).root;
-      const info = await getDiskUsageAsync(root);
-      disk = {
-        usedBytes: info.used,
-        totalBytes: info.total,
-        availableBytes: info.available
-      };
-    } catch (err) {
-      console.log('diskusage error:', err);
+    // 3) Disk — TTL-cached so the statfs syscall fires at most once every
+    // few seconds even when the admin panel is polling at 1Hz.
+    const now = Date.now();
+    if (!diskCache.value || now - diskCache.at > DISK_TTL_MS) {
+      try {
+        const root = path.parse(process.cwd()).root;
+        const info = await getDiskUsageAsync(root);
+        diskCache = {
+          at: now,
+          value: { usedBytes: info.used, totalBytes: info.total, availableBytes: info.available }
+        };
+      } catch (err) {
+        console.log('diskusage error:', err);
+        diskCache = { at: now, value: null };
+      }
     }
 
     // 4) User count + uptime
@@ -87,12 +117,12 @@ router.get('/stats', async (req, res) => {
     const uptimeSeconds = process.uptime();
 
     res.json({
-      hostname,
-      nodeVersion,
-      cpuCount,
+      hostname: CACHED_HOSTNAME,
+      nodeVersion: CACHED_NODE_VERSION,
+      cpuCount: CACHED_CPU_COUNT,
       cpuLoad,
       memory,
-      disk,
+      disk: diskCache.value,
       userCount,
       uptimeSeconds
     });

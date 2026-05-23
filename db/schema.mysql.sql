@@ -23,5 +23,10 @@ CREATE TABLE IF NOT EXISTS settings (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   data JSON NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uk_settings_user_id (user_id)
 );
+
+-- Idempotent fallback for installs that pre-date the inline UNIQUE KEY
+-- declaration above. MySQL 8.0.13+ supports `IF NOT EXISTS` on indexes.
+CREATE UNIQUE INDEX IF NOT EXISTS uk_settings_user_id ON settings (user_id);

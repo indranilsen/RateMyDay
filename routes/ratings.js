@@ -183,35 +183,40 @@ router.get('/streak', async (req, res) => {
       if (ratingRows.length === 0) {
         return res.json({ current: 0, longest: 0, acknowledged });
       }
-      const dates = ratingRows.map(r => r.rating_date.toISOString().split('T')[0]);
-      const oneDayMs = 1000 * 60 * 60 * 24;
 
-      // Longest historical run of consecutive days
+      const MS_PER_DAY = 86400000;
+
+      // Single pass: compute longest streak via epoch-day gap math and
+      // populate a Set of epoch-day integers for the current-streak walk.
+      // Previously this allocated N strings + 2N Date objects (each gap
+      // computed `new Date(prev) - new Date(curr)` inside the loop).
+      const haveEpochDay = new Set();
       let longest = 1;
       let run = 1;
-      for (let i = 1; i < dates.length; i++) {
-        const gap = Math.round((new Date(dates[i]) - new Date(dates[i - 1])) / oneDayMs);
-        if (gap === 1) {
-          run += 1;
-          if (run > longest) longest = run;
-        } else {
-          run = 1;
+      let prevEpochDay = null;
+      for (let i = 0; i < ratingRows.length; i++) {
+        const epochDay = Math.floor(ratingRows[i].rating_date.getTime() / MS_PER_DAY);
+        haveEpochDay.add(epochDay);
+        if (prevEpochDay !== null) {
+          if (epochDay - prevEpochDay === 1) {
+            run += 1;
+            if (run > longest) longest = run;
+          } else {
+            run = 1;
+          }
         }
+        prevEpochDay = epochDay;
       }
 
       // Current — count back from today (or yesterday if today not rated yet
-      // so we don't break the user's streak before they've had a chance to rate)
-      const haveDate = new Set(dates);
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
-      const todayStr = today.toISOString().split('T')[0];
-      const startOffset = haveDate.has(todayStr) ? 0 : 1;
-      let cursor = new Date(today);
-      cursor.setUTCDate(cursor.getUTCDate() - startOffset);
+      // so we don't break the user's streak before they've had a chance to rate).
+      // Walk integer epoch days instead of decrementing a Date + re-formatting.
+      const todayEpochDay = Math.floor(Date.now() / MS_PER_DAY);
+      let cursor = haveEpochDay.has(todayEpochDay) ? todayEpochDay : todayEpochDay - 1;
       let current = 0;
-      while (haveDate.has(cursor.toISOString().split('T')[0])) {
+      while (haveEpochDay.has(cursor)) {
         current += 1;
-        cursor.setUTCDate(cursor.getUTCDate() - 1);
+        cursor -= 1;
       }
 
       res.json({ current, longest, acknowledged });
@@ -256,7 +261,14 @@ router.post('/streak/ack', async (req, res) => {
   }
 });
 
-// Insights endpoint — personal analytics dashboard data
+// Insights endpoint — personal analytics dashboard data.
+//
+// Performance contract: a single linear pass over the ratings array
+// computes total, sum, day-of-week sums/counts, longest streak (via gap
+// math on integer epoch days), per-month sums/counts (into a Map), and
+// a date->rating lookup map for the recent-30 strip. Previously this did
+// 2 separate streak walks + 7 array filters + 12 filter passes (one per
+// month) — O(N×12) on the monthly block. Now O(N) end-to-end.
 router.get('/insights', async (req, res) => {
     const userId = req.session.userId;
     if (!userId) {
@@ -264,108 +276,118 @@ router.get('/insights', async (req, res) => {
     }
 
     try {
-      // 1) Pull every rating for this user — for a daily-rated user we'll
-      // never exceed a few thousand rows in their lifetime. Aggregation is
-      // cheaper to do in JS than to maintain dialect-portable SQL across
-      // MySQL and SQLite.
       const [rows] = await db.query(
         'SELECT rating_date, rating FROM ratings WHERE user_id = ? ORDER BY rating_date ASC',
         [userId]
       );
 
-      // Normalize to plain `YYYY-MM-DD` strings the same way ratings list
-      // endpoints do — SQLite returns rating_date as a Date via the shim.
-      const ratings = rows.map(r => ({
-        date: r.rating_date.toISOString().split('T')[0],
-        rating: r.rating
-      }));
+      const totalRatings = rows.length;
+      let sum = 0;
+      let longestStreak = totalRatings > 0 ? 1 : 0;
+      let runLength = totalRatings > 0 ? 1 : 0;
+      let prevEpochDay = null;
+      const dowSums = [0, 0, 0, 0, 0, 0, 0];
+      const dowCounts = [0, 0, 0, 0, 0, 0, 0];
+      const monthlyMap = new Map(); // 'YYYY-MM' -> { sum, count }
+      const haveDate = new Map();   // 'YYYY-MM-DD' -> rating
+      const dates = new Array(totalRatings);
 
-      // 2) Totals
-      const totalRatings = ratings.length;
-      const averageRating = totalRatings === 0
-        ? 0
-        : ratings.reduce((sum, r) => sum + r.rating, 0) / totalRatings;
+      const MS_PER_DAY = 86400000;
 
-      // 3) Streaks — walk consecutive YYYY-MM-DD dates.
-      // "Current" includes today/yesterday so missing today doesn't break it
-      // before the user has had a chance to rate. We compute against the
-      // user's most-recent rating's date when there's nothing newer.
-      let longestStreak = 0;
-      let currentStreak = 0;
-      if (totalRatings > 0) {
-        let runLength = 1;
-        longestStreak = 1;
-        const oneDayMs = 1000 * 60 * 60 * 24;
-        for (let i = 1; i < ratings.length; i++) {
-          const prev = new Date(ratings[i - 1].date);
-          const curr = new Date(ratings[i].date);
-          const gap = Math.round((curr - prev) / oneDayMs);
-          if (gap === 1) {
+      for (let i = 0; i < totalRatings; i++) {
+        const r = rows[i];
+        // Date columns come back as a JS Date (mysql2 native + sqlite shim).
+        // Use the underlying timestamp directly rather than re-parsing a
+        // string — saves Date.parse + toISOString allocations per row.
+        const dateObj = r.rating_date;
+        const epochDay = Math.floor(dateObj.getTime() / MS_PER_DAY);
+        const ds = dateObj.toISOString().slice(0, 10);
+        dates[i] = ds;
+        const rating = r.rating;
+
+        sum += rating;
+        haveDate.set(ds, rating);
+
+        // Day-of-week: getUTCDay() is Sun=0..Sat=6; reindex to Mon=0..Sun=6
+        const dow = (dateObj.getUTCDay() + 6) % 7;
+        dowSums[dow] += rating;
+        dowCounts[dow] += 1;
+
+        // Monthly bucket
+        const monthKey = ds.slice(0, 7);
+        const bucket = monthlyMap.get(monthKey);
+        if (bucket) {
+          bucket.sum += rating;
+          bucket.count += 1;
+        } else {
+          monthlyMap.set(monthKey, { sum: rating, count: 1 });
+        }
+
+        // Longest-streak via epoch-day gap (no Date math, no string parse)
+        if (prevEpochDay !== null) {
+          if (epochDay - prevEpochDay === 1) {
             runLength += 1;
             if (runLength > longestStreak) longestStreak = runLength;
           } else {
             runLength = 1;
           }
         }
-        // Current streak: count back from today as long as days are present
-        const haveDate = new Set(ratings.map(r => r.date));
+        prevEpochDay = epochDay;
+      }
+
+      const averageRating = totalRatings === 0 ? 0 : sum / totalRatings;
+
+      // Current streak — count back from today (or yesterday if today isn't
+      // rated yet) using the in-memory haveDate map.
+      let currentStreak = 0;
+      if (totalRatings > 0) {
         const today = new Date();
         today.setUTCHours(0, 0, 0, 0);
-        // If today not rated, we still allow yesterday to be the streak head
-        const startOffset = haveDate.has(today.toISOString().split('T')[0]) ? 0 : 1;
-        let cursor = new Date(today);
+        const startOffset = haveDate.has(today.toISOString().slice(0, 10)) ? 0 : 1;
+        const cursor = new Date(today);
         cursor.setUTCDate(cursor.getUTCDate() - startOffset);
-        let count = 0;
-        while (haveDate.has(cursor.toISOString().split('T')[0])) {
-          count += 1;
+        while (haveDate.has(cursor.toISOString().slice(0, 10))) {
+          currentStreak += 1;
           cursor.setUTCDate(cursor.getUTCDate() - 1);
         }
-        currentStreak = count;
       }
 
-      // 4) Day-of-week averages — 0 = Sunday in JS, so we reindex to Mon..Sun
-      // because that's how week views typically read.
-      const dowSums = [0, 0, 0, 0, 0, 0, 0];
-      const dowCounts = [0, 0, 0, 0, 0, 0, 0];
-      for (const r of ratings) {
-        const d = new Date(r.date);
-        // Convert JS Sun=0..Sat=6 -> Mon=0..Sun=6
-        const idx = (d.getUTCDay() + 6) % 7;
-        dowSums[idx] += r.rating;
-        dowCounts[idx] += 1;
-      }
-      const dayOfWeekAverages = dowSums.map((sum, i) => ({
-        day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
-        average: dowCounts[i] === 0 ? null : sum / dowCounts[i],
-        count: dowCounts[i]
-      }));
+      const dayOfWeekAverages = [
+        { day: 'Mon', average: dowCounts[0] ? dowSums[0] / dowCounts[0] : null, count: dowCounts[0] },
+        { day: 'Tue', average: dowCounts[1] ? dowSums[1] / dowCounts[1] : null, count: dowCounts[1] },
+        { day: 'Wed', average: dowCounts[2] ? dowSums[2] / dowCounts[2] : null, count: dowCounts[2] },
+        { day: 'Thu', average: dowCounts[3] ? dowSums[3] / dowCounts[3] : null, count: dowCounts[3] },
+        { day: 'Fri', average: dowCounts[4] ? dowSums[4] / dowCounts[4] : null, count: dowCounts[4] },
+        { day: 'Sat', average: dowCounts[5] ? dowSums[5] / dowCounts[5] : null, count: dowCounts[5] },
+        { day: 'Sun', average: dowCounts[6] ? dowSums[6] / dowCounts[6] : null, count: dowCounts[6] }
+      ];
 
-      // 5) Monthly averages — last 12 months, most-recent first. Even months
-      // with zero ratings get an entry so the chart has a stable 12-bar shape.
+      // Monthly averages — last 12 months, most-recent first. Pull from the
+      // Map we built during the main pass (O(1) per month lookup).
       const monthlyAverages = [];
       const now = new Date();
       for (let i = 0; i < 12; i++) {
         const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
         const yyyy = monthStart.getUTCFullYear();
         const mm = String(monthStart.getUTCMonth() + 1).padStart(2, '0');
-        const prefix = `${yyyy}-${mm}`;
-        const inMonth = ratings.filter(r => r.date.startsWith(prefix));
+        const key = `${yyyy}-${mm}`;
+        const bucket = monthlyMap.get(key);
         monthlyAverages.push({
-          month: prefix,
-          average: inMonth.length === 0 ? null : inMonth.reduce((s, r) => s + r.rating, 0) / inMonth.length,
-          count: inMonth.length
+          month: key,
+          average: bucket ? bucket.sum / bucket.count : null,
+          count: bucket ? bucket.count : 0
         });
       }
 
-      // 6) Recent trend — last 30 days as {date, rating|null}
+      // Recent trend — last 30 days, oldest-first.
       const recentTrend = [];
-      const haveDate = new Map(ratings.map(r => [r.date, r.rating]));
-      for (let i = 29; i >= 0; i--) {
-        const d = new Date();
-        d.setUTCHours(0, 0, 0, 0);
-        d.setUTCDate(d.getUTCDate() - i);
-        const ds = d.toISOString().split('T')[0];
+      const trendCursor = new Date();
+      trendCursor.setUTCHours(0, 0, 0, 0);
+      trendCursor.setUTCDate(trendCursor.getUTCDate() - 29);
+      for (let i = 0; i < 30; i++) {
+        const ds = trendCursor.toISOString().slice(0, 10);
         recentTrend.push({ date: ds, rating: haveDate.has(ds) ? haveDate.get(ds) : null });
+        trendCursor.setUTCDate(trendCursor.getUTCDate() + 1);
       }
 
       res.json({

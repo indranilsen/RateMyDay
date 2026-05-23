@@ -40,12 +40,32 @@ function coerceParams(params) {
   });
 }
 
+// Prepared-statement cache keyed by the raw SQL text. better-sqlite3's
+// .prepare() compiles a fresh statement each call (cheap but not free —
+// strings allocate, AST walks). Caching cuts steady-state query overhead
+// dramatically for endpoints that re-execute the same SQL in a hot loop.
+// Cap is generous; route SQL is small and static.
+const STMT_CACHE = new Map();
+const STMT_CACHE_MAX = 512;
+function prepareCached(sql) {
+  let stmt = STMT_CACHE.get(sql);
+  if (stmt) return stmt;
+  stmt = sqliteDb.prepare(sql);
+  if (STMT_CACHE.size >= STMT_CACHE_MAX) {
+    // Drop the oldest entry; rough LRU is fine — eviction is exceptional.
+    const first = STMT_CACHE.keys().next().value;
+    STMT_CACHE.delete(first);
+  }
+  STMT_CACHE.set(sql, stmt);
+  return stmt;
+}
+
 // mysql2-compatible query() — returns Promise<[rows, fields]> on SELECT,
 // Promise<[{ affectedRows, insertId }, fields]> on writes.
 function query(sql, params = []) {
   return new Promise((resolve, reject) => {
     try {
-      const stmt = sqliteDb.prepare(sql);
+      const stmt = prepareCached(sql);
       const args = coerceParams(params);
       const trimmed = sql.trimStart().toUpperCase();
 

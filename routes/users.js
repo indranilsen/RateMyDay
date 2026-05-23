@@ -1,5 +1,9 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
+// `bcrypt` (native C++ binding) is ~3-10× faster than `bcryptjs` (pure JS)
+// for the same cost factor; matters because login holds an event-loop slot
+// while it computes. We migrated from bcryptjs without changing the cost
+// (10 rounds), so existing password hashes verify identically.
+const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit');
 const { db } = require('../db');
 
@@ -71,9 +75,13 @@ router.post('/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ message: 'Invalid password' });
     }
 
-    // Start a session
-    // Return user role so frontend can store it
+    // Start a session. Stash the user_role on the session so the admin
+    // middleware can authorize without an extra DB roundtrip on every
+    // admin request (it now falls back to a DB read only for sessions
+    // that predate this change, i.e. existing sessions whose row was
+    // serialized before we started storing role).
     req.session.userId = user.id;
+    req.session.userRole = user.user_role;
     res.json({ message: 'Login successful', role: user.user_role });
   } catch (error) {
     console.error(error);

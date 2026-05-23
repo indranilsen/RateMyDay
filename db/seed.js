@@ -1,6 +1,6 @@
 // Dev-mode seed data for the in-memory SQLite backend.
 // Inserted only if the users table is empty so reseeding is safe.
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 
 async function seed(db) {
   // 1) Idempotent: bail if any users exist

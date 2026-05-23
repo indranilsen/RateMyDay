@@ -76,9 +76,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middleware for parsing request bodies
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// Body parsing — JSON only. The app's API has zero form-encoded payloads;
+// `bodyParser.urlencoded` was being attempted on every request just to no-op.
+// `limit: 16kb` is well above our largest legitimate payload (a day note
+// + rating + a few settings flags) and shrinks the attack surface.
+app.use(bodyParser.json({ limit: '16kb' }));
 
 // Configure morgan for logging
 app.use(morgan('combined'));
@@ -89,6 +91,20 @@ app.use(cors({
   origin: process.env.CORS_ORIGIN, // Allow requests from this origin
   credentials: true // Enable credentials for CORS requests
 }));
+
+// Health endpoint — checks DB reachability so nginx/uptime checks can tell
+// "process alive but DB down" from "fully healthy". Deliberately mounted
+// BEFORE the session middleware so frequent uptime probes don't hit the
+// session store (which is itself a DB query on every request in MySQL mode).
+app.get('/health', async (req, res) => {
+  try {
+    await db.query('SELECT 1');
+    res.json({ status: 'ok' });
+  } catch (err) {
+    console.error('[Health] DB check failed', err);
+    res.status(503).json({ status: 'db_unavailable' });
+  }
+});
 
 // Session configuration
 let sessionSecret = process.env.SESSION_SECRET;
@@ -117,18 +133,6 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000
   }
 }));
-
-// Health endpoint — checks DB reachability so nginx/uptime checks can tell
-// "process alive but DB down" from "fully healthy"
-app.get('/health', async (req, res) => {
-  try {
-    await db.query('SELECT 1');
-    res.json({ status: 'ok' });
-  } catch (err) {
-    console.error('[Health] DB check failed', err);
-    res.status(503).json({ status: 'db_unavailable' });
-  }
-});
 
 // Use routers
 let endpointPrefix = process.env.ENDPOINT_PREFIX;
