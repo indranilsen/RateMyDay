@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS settings (
   UNIQUE KEY uk_settings_user_id (user_id)
 );
 
--- Idempotent fallback for installs that pre-date the inline UNIQUE KEY
--- declaration above. MySQL 8.0.13+ supports `IF NOT EXISTS` on indexes.
-CREATE UNIQUE INDEX IF NOT EXISTS uk_settings_user_id ON settings (user_id);
+-- Existing pre-Dec-2024 installs need a one-time manual:
+--   ALTER TABLE settings ADD UNIQUE KEY uk_settings_user_id (user_id);
+-- We can't ship that as auto-applied DDL here because `CREATE INDEX IF NOT
+-- EXISTS` requires MySQL 8.0.29+, and prod (8.0.x) parse-errors on the
+-- IF NOT EXISTS token. Tried it — it took the server down. The inline
+-- UNIQUE KEY in the CREATE TABLE above covers any fresh install going
+-- forward; existing installs need the manual ALTER once.
